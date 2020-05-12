@@ -1,15 +1,39 @@
 #include "pool.h"
 #include "common.h"
-#include "message.h"
+#include "database.h"
 
+Pool_t * poolInit(){
+    
+    Pool_t *pool;
+    size_t size = sizeof(Pool_t);
+
+    pool = (Pool_t *)malloc(sizeof(Pool_t));
+    CHECK(pool != NULL);
+
+    pool->minerDb = DatabaseCreate();
+    pool->minerQty = 0;
+
+    return pool;
+}
+
+void poolDestroy(Pool_t *pool){
+
+    DatabaseDestroy(pool->minerDb);
+    free(pool);
+}
 
 // Proceso mensajes enviados por el minero
-void poolProcessMessage(MessageType_t message){
+void pProcessPacket(Pool_t* pool, Packet_t *packet){
 
-    switch (message)
+    PacketType_t type = packet->type;
+
+    switch (type)
     {
     case connectPool:
-        /* Registro conexión, envio mensaje de bienvenida con stats*/
+
+        pool -> minerQty++;
+        queuePut(pool -> minerDb);
+        printf("Se ha conectado el minero", packet->arg);
         break;
     
     case reqBlock:
@@ -21,7 +45,7 @@ void poolProcessMessage(MessageType_t message){
         break;
     
     case submitBlock:
-        /* printear info acerca del check del bloque y celebrar*/
+        /* chequear el comportamiento y estado de lo*/
         break;
 
     case disconnectPool:
@@ -33,4 +57,38 @@ void poolProcessMessage(MessageType_t message){
         break;
     }
 
+}
+
+void pFillPacket(Pool_t* pool, Packet_t * packet){
+
+    PacketType_t type = packet->type;
+
+    switch (type)
+    {
+    case welcomeMiner:
+
+        break;
+    
+    case sendBlock:
+
+        break;  
+
+    case sendNonce:
+        break;
+    
+    case checkBlock:
+        break;
+    
+    case floodStop:
+        break;
+
+    case sendReward:
+        break;    
+
+    case farewellMiner:
+        break;
+    
+    default:
+        break;
+    }
 }

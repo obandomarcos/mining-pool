@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#include "miner.h"
+
 #define MAX_WALLET_TRANSACTIONS 20
 #define MAX_LEN_MSG
 
@@ -41,19 +43,19 @@ typedef enum
     reqNonce,           
     submitBlock,        
     disconnectPool     
-} MessageType_t;
+} PacketType_t;
 
-struct __attribute__((__packed__)) Package 
+typedef struct __attribute__((__packed__))
 {
     uint16_t sz8;
-    MessageType_t type;
+    PacketType_t type;
     
     union 
     {
 
         struct 
         {
-            
+            MinerId id;
 
         } argswMiner;
     
@@ -114,6 +116,6 @@ struct __attribute__((__packed__)) Package
         } args_dPool;
 
     } args;
-};
+} Packet_t;
 
 #endif
