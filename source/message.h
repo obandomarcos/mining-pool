@@ -54,8 +54,6 @@ struct __attribute__((__packed__)) Package
         struct 
         {
             
-            char welcomeMsg[MAX_LEN_MSG];
-
 
         } argswMiner;
     
