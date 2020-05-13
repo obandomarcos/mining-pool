@@ -1,142 +1,98 @@
-#include <stdio.h>
-#include <sys/socket.h>
+#include <arpa/inet.h>
 #include <netinet/in.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <unistd.h>
 #include <netdb.h> 
-
+#include "common.h"
+#include "packet.h"
 #include "miner.h"
 
-Miner_t * minerInit(){
+#define BUFLEN 512
+#define NPACK 10
+#define PORT 9930
+
+int minerInit(char *pool_name, struct hostent *pool, struct sockaddr_in *pool_addr){
     
-    Miner_t *miner;
-    size_t size = sizeof(Miner_t);
+    int sockfd;
 
-    miner = (Miner_t *)malloc(sizeof(Miner_t));
-    CHECK(miner != NULL);
+    CHECK(sockfd=socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP));
 
-    miner->nonceSection = 0;
-    miner->bloque = blockInit();
+    pool = gethostbyname(pool_name);
+    CHECK(pool!=NULL);
 
-    return miner;
-}
-
-int minerConnect(Miner_t *miner, char * serverName, int portno){
-
-    struct sockaddr_in serv_addr;
-    struct hostent *server;
-    int sockfd, ret;
-    Packet_t packet;
-
-    // Tareas de conexión del minero
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    CHECK(sockfd != 0);
-
-    server = gethostbyname(serverName);
-    CHECK(server != NULL);
-
-    memset(&serv_addr, 0, sizeof(serv_addr));
-
-    serv_addr.sin_family = AF_INET;
-    bcopy((char *)server->h_addr_list[0], 
-        (char *)&serv_addr.sin_addr.s_addr,
-        server->h_length);
-
-    // host to net short
-    serv_addr.sin_port = htons(portno);
-    ret = connect(sockfd, (struct sockaddr *) &serv_addr,
-            sizeof(serv_addr));
-    CHECK(ret == 0);
-
-    // Envío de paquete de saludo (por ahora, el paquete vive acá adentro)
-    // le cargué el tipo así que ya debería saber como llenarlo
-    packet.type = connectPool;
-    mFillPacket(miner, &packet);
-    
-    sendPacket(sockfd, packet);
+    memset(pool_addr, 0, sizeof(*pool_addr));
+    pool_addr -> sin_family = AF_INET;
+    memcpy(pool->h_addr, &pool_addr->sin_addr.s_addr, pool->h_length);
+    pool_addr->sin_port = htons(PORT);
 
     return sockfd;
 }
 
-void mFillPacket(Miner_t *miner, Packet_t *packet){
+void minerDestroy(int minersock){
 
-    PacketType_t type = packet->type;
-
-    switch (type)
-    {
-    case connectPool:
-
-        packet->argswMiner.id = miner->id;
-        break;
-    
-    case reqBlock:
-        /* recibir y alocar bloque actual*/
-        break;  
-
-    case reqNonce:
-        /* comenzar worker threads a minar la gilada*/
-        break;
-    
-    case submitBlock:
-        /* chequear el comportamiento y estado de lo*/
-        break;
-
-    case disconnectPool:
-        /* Registro salida del minero y envío despedida con stats*/
-        break;
-    
-    default:
-        /* mensaje incorrecto */ 
-        break;
-    }
-
-
-
+    close(minersock);
 }
 
-void mProcessPacket(Packet_t * packet){
+void minerSendPacket(int minersock, struct sockaddr_in *pool_addr, PacketType_t pType){
 
-    PacketType_t type = packet->type;
+    Packet_t packet;
+    socklen_t slen=sizeof(*pool_addr);
 
-    switch (type)
+    packet.type = pType;
+    packet.sz8 = sizeof(packet.sz8)+sizeof(packet.type);
+
+    switch (pType)
     {
-    case welcomeMiner:
-        /* printear información del pool al cual me suscribí*/
-        break;
-    
-    case sendBlock:
-        /* recibir y alocar bloque actual*/
-        break;  
+        case connectPool:
+        
+            packet.sz8 += sizeof(packet.args.args_connectPool);
+            strcpy(packet.args.args_connectPool.mensaje, "Buen día, quiero conectarme al pool\n");
+            
+            break;
 
-    case sendNonce:
-        /* comenzar worker threads a minar la gilada*/
-        break;
-    
-    case checkBlock:
-        /* printear info acerca del check del bloque y celebrar*/
-        break;
-    
-    case floodStop:
-        /* parar todos los threads del minero y esperar por nuevos headers*/
-        break;
+        case disconnectPool:
 
-    case sendReward:
-        /* guardar la platita en la billetera y seguir adelante con la vida de minero */ 
-        break;    
-
-    case farewellMiner:
-        /* terminar procesos del lado del minero*/
-        break;
-    
-    default:
-        /* mensaje incorrecto */ 
-        break;
+            packet.sz8 += sizeof(packet.args.args_disconnectPool);
+            strcpy(packet.args.args_farewellMiner.mensaje, "Me hinche las bolas, renuncio\n");
+            
+            break;
+        
+        default:
+            perror("Tipo de paquete no manipulable\n");
+            exit(1);
+            break;
     }
 
+    CHECK(sendto(minersock, &packet, packet.sz8, 0, (struct sockaddr *)pool_addr, slen)!=-1);
 }
 
-void minerDestroy(Miner_t *miner){
+void minerProcessPacket(int minersock, struct sockaddr_in *pool_addr){
 
-    blockDestroy(miner->bloque);
+    Packet_t packet;
+    socklen_t slen=sizeof(*pool_addr);
 
-    free(miner);
+    CHECK(recvfrom(minersock, &packet, sizeof(Packet_t), 0, (struct sockaddr *)pool_addr, &slen)!=-1);
+    
+    switch (packet.type)
+    {
+        case welcomeMiner:
+
+            printf("%s", packet.args.args_welcomeMiner.mensaje);
+            break;
+
+        case farewellMiner:
+            
+            printf("%s", packet.args.args_farewellMiner.mensaje);
+            break;
+        
+        default:
+            perror("Tipo de paquete no manipulable\n");
+            exit(1);
+            break;
+    }
 }

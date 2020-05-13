@@ -1,94 +1,107 @@
-#include "pool.h"
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include "common.h"
-#include "database.h"
+#include "packet.h"
+#include "pool.h"
 
-Pool_t * poolInit(){
+#define BUFLEN 512
+#define NPACK 10
+#define PORT 9930
+
+int poolInit(struct sockaddr_in *si_pool)
+{   
+    int sockfd;
+
+    sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    CHECK(sockfd!=-1);
+
+    memset(si_pool, 0, sizeof(*si_pool));
+    si_pool->sin_family = AF_INET;
+    si_pool->sin_port = htons(PORT);
+    si_pool->sin_addr.s_addr = htonl(INADDR_ANY);
     
-    Pool_t *pool;
-    size_t size = sizeof(Pool_t);
+    CHECK(bind(sockfd, (struct sockaddr *)si_pool, sizeof(*si_pool))!=-1);
 
-    pool = (Pool_t *)malloc(sizeof(Pool_t));
-    CHECK(pool != NULL);
-
-    pool->minerDb = DatabaseCreate();
-    pool->minerQty = 0;
-
-    return pool;
+    printf("Escuchando desde el pool por nuevo minero\n");
+    return sockfd;
 }
 
-void poolDestroy(Pool_t *pool){
+void poolDestroy(int poolsock){
 
-    DatabaseDestroy(pool->minerDb);
-    free(pool);
+    close(poolsock);
 }
 
-// Proceso mensajes enviados por el minero
-void pProcessPacket(Pool_t* pool, Packet_t *packet){
+void poolSendPacket(int poolsock, struct sockaddr_in * miner_addr, PacketType_t pType){
 
-    PacketType_t type = packet->type;
+    Packet_t packet;
+    socklen_t slen=sizeof(*miner_addr);
+    
+    packet.type = pType;
+    packet.sz8 = sizeof(packet.sz8)+sizeof(packet.type);
 
-    switch (type)
+    switch (pType)
     {
-    case connectPool:
+        case welcomeMiner:
+        
+            packet.sz8 += sizeof(packet.args.args_welcomeMiner);
+            strcpy(packet.args.args_welcomeMiner.mensaje, "¡Bienvenido a MinaSim!\n");
+            
+            break;
 
-        pool -> minerQty++;
-        queuePut(pool -> minerDb);
-        printf("Se ha conectado el minero", packet->arg);
-        break;
-    
-    case reqBlock:
-        /* recibir y alocar bloque actual*/
-        break;  
-
-    case reqNonce:
-        /* comenzar worker threads a minar la gilada*/
-        break;
-    
-    case submitBlock:
-        /* chequear el comportamiento y estado de lo*/
-        break;
-
-    case disconnectPool:
-        /* Registro salida del minero y envío despedida con stats*/
-        break;
-    
-    default:
-        /* mensaje incorrecto */ 
-        break;
+        case farewellMiner:
+            
+            packet.type = farewellMiner;
+        
+            packet.sz8 += sizeof(packet.args.args_connectPool);
+            strcpy(packet.args.args_farewellMiner.mensaje, "Te saludamos desde MinaSim!\n");
+            break;
+        
+        default:
+            perror("Tipo de paquete no manipulable\n");
+            exit(1);
+            break;
     }
 
+    CHECK(sendto(poolsock, &packet, packet.sz8, 0, (struct sockaddr *)miner_addr, slen)!=-1);
 }
 
-void pFillPacket(Pool_t* pool, Packet_t * packet){
+void poolProcessPacket(int poolsock, struct sockaddr_in *miner_addr){
 
-    PacketType_t type = packet->type;
+    Packet_t packet;
+    socklen_t slen=sizeof(*miner_addr);
 
-    switch (type)
+    CHECK(recvfrom(poolsock, &packet, sizeof(Packet_t), 0, (struct sockaddr *)miner_addr, &slen)!=-1);
+    
+    switch (packet.type)
     {
-    case welcomeMiner:
+        case connectPool:
+            
+            printf("%s", packet.args.args_welcomeMiner.mensaje);
+            
+            poolSendPacket(poolsock, miner_addr, welcomeMiner);
+            break;
 
-        break;
-    
-    case sendBlock:
+        case disconnectPool:
 
-        break;  
+            poolSendPacket(poolsock, miner_addr, farewellMiner);
 
-    case sendNonce:
-        break;
-    
-    case checkBlock:
-        break;
-    
-    case floodStop:
-        break;
-
-    case sendReward:
-        break;    
-
-    case farewellMiner:
-        break;
-    
-    default:
-        break;
+            printf("%s", packet.args.args_disconnectPool.mensaje);
+            break;
+        
+        default:
+            perror("Tipo de paquete no manipulable\n");
+            exit(1);
+            break;
     }
+    
+    printf("Paquete recibido desde %s:%d\n\n", 
+    inet_ntoa(miner_addr -> sin_addr), ntohs(miner_addr -> sin_port));
 }
