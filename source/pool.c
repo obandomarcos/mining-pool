@@ -16,33 +16,44 @@
 #define NPACK 10
 #define PORT 9930
 
-int poolInit(struct sockaddr_in *si_pool)
+Pool_t * poolInit()
+{
+
+    Pool_t * pool = (Pool_t *)malloc(sizeof(Pool_t));
+    CHECK(pool != NULL);
+
+    return pool;
+}
+
+void poolListen(Pool_t * pool)
 {   
-    int sockfd;
-
-    sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    CHECK(sockfd!=-1);
-
-    memset(si_pool, 0, sizeof(*si_pool));
-    si_pool->sin_family = AF_INET;
-    si_pool->sin_port = htons(PORT);
-    si_pool->sin_addr.s_addr = htonl(INADDR_ANY);
     
-    CHECK(bind(sockfd, (struct sockaddr *)si_pool, sizeof(*si_pool))!=-1);
+    pool -> poolsock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    CHECK(pool -> poolsock!=-1);
+
+    memset(&pool -> pool_addr, 0, sizeof(pool -> pool_addr));
+    pool -> pool_addr.sin_family = AF_INET;
+    pool -> pool_addr.sin_port = htons(PORT);
+    pool -> pool_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    
+    CHECK(bind(pool -> poolsock, (struct sockaddr *)&pool -> pool_addr, sizeof(pool -> pool_addr))!=-1);
 
     printf("Escuchando desde el pool por nuevo minero\n");
-    return sockfd;
+
 }
 
-void poolDestroy(int poolsock){
+void poolDestroy(Pool_t * pool){
 
-    close(poolsock);
+    close(pool -> poolsock);
+
+    free(pool);
+
 }
 
-void poolSendPacket(int poolsock, struct sockaddr_in * miner_addr, PacketType_t pType){
-
+// esta sería como un método privado
+void poolSendPacket(Pool_t *pool, PacketType_t pType)
+{
     Packet_t packet;
-    socklen_t slen=sizeof(*miner_addr);
     
     packet.type = pType;
     packet.sz8 = sizeof(packet.sz8)+sizeof(packet.type);
@@ -54,14 +65,15 @@ void poolSendPacket(int poolsock, struct sockaddr_in * miner_addr, PacketType_t 
             packet.sz8 += sizeof(packet.args.args_welcomeMiner);
             strcpy(packet.args.args_welcomeMiner.mensaje, "¡Bienvenido a MinaSim!\n");
             
+            CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> miner_addr, (socklen_t)sizeof(pool -> miner_addr))!=-1);
             break;
 
         case farewellMiner:
-            
-            packet.type = farewellMiner;
         
             packet.sz8 += sizeof(packet.args.args_connectPool);
             strcpy(packet.args.args_farewellMiner.mensaje, "Te saludamos desde MinaSim!\n");
+
+            CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> miner_addr, (socklen_t)sizeof(pool -> miner_addr))!=-1);
             break;
         
         default:
@@ -69,16 +81,14 @@ void poolSendPacket(int poolsock, struct sockaddr_in * miner_addr, PacketType_t 
             exit(1);
             break;
     }
-
-    CHECK(sendto(poolsock, &packet, packet.sz8, 0, (struct sockaddr *)miner_addr, slen)!=-1);
 }
 
-void poolProcessPacket(int poolsock, struct sockaddr_in *miner_addr){
+void poolProcessPacket(Pool_t *pool){
 
     Packet_t packet;
-    socklen_t slen=sizeof(*miner_addr);
+    socklen_t slen = sizeof(pool -> miner_addr);
 
-    CHECK(recvfrom(poolsock, &packet, sizeof(Packet_t), 0, (struct sockaddr *)miner_addr, &slen)!=-1);
+    CHECK(recvfrom(pool -> poolsock, &packet, sizeof(Packet_t), 0, (struct sockaddr *)&pool -> miner_addr, &slen) != -1);
     
     switch (packet.type)
     {
@@ -86,13 +96,16 @@ void poolProcessPacket(int poolsock, struct sockaddr_in *miner_addr){
             
             printf("%s", packet.args.args_welcomeMiner.mensaje);
             
-            poolSendPacket(poolsock, miner_addr, welcomeMiner);
+            // cargar a la lista de mineros
+
+            poolSendPacket(pool, welcomeMiner);
             break;
 
         case disconnectPool:
 
-            poolSendPacket(poolsock, miner_addr, farewellMiner);
+            poolSendPacket(pool, farewellMiner);
 
+            // getear de la lista de mineros
             printf("%s", packet.args.args_disconnectPool.mensaje);
             break;
         
@@ -103,5 +116,5 @@ void poolProcessPacket(int poolsock, struct sockaddr_in *miner_addr){
     }
     
     printf("Paquete recibido desde %s:%d\n\n", 
-    inet_ntoa(miner_addr -> sin_addr), ntohs(miner_addr -> sin_port));
+    inet_ntoa(pool -> miner_addr.sin_addr), ntohs(pool -> miner_addr.sin_port));
 }

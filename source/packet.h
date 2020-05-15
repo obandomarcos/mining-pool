@@ -10,9 +10,11 @@ typedef enum
     // miner2pool
     connectPool,
     disconnectPool,
+    sendNonce, 
 
     // pool2miner
     welcomeMiner,
+    reqNonce, 
     farewellMiner
 
 } PacketType_t;

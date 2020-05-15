@@ -18,32 +18,29 @@
 #define PORT 9930
 
 int main(int argc, char *argv[])
-{
-    int s;
-    struct sockaddr_in pool_addr;
-    struct hostent *pool = NULL;
+{   
     char c;
+    Miner_t *miner = minerCreate();
 
     CHECK(argc >= 2);
 
-    s = minerInit(argv[1], pool, &pool_addr);
+    minerInit(miner, argv[1]);
 
     //conexión
 
-    minerSendPacket(s, &pool_addr, connectPool);
+    minerSendPacket(miner, connectPool);
 
-    minerProcessPacket(s, &pool_addr);
+    minerProcessPacket(miner);
 
     c = getchar();
-    
+    printf("Entrada %c\n", c);
     //desconexión
+    
+    minerSendPacket(miner, disconnectPool);
 
-    minerSendPacket(s, &pool_addr, disconnectPool);
+    minerProcessPacket(miner);
 
-    // Recepción de paquetes
-    minerProcessPacket(s, &pool_addr);
-
-    minerDestroy(s);
+    minerDestroy(miner);
     return 0;
 }
 

@@ -14,17 +14,15 @@
 
 int main(void)
 {
-    struct sockaddr_in si_pool, si_miner;
-    int s;
+    Pool_t *pool = poolInit();
 
-    // inicializo al pool, protocolo UDP, ver broadcast
-    s = poolInit(&si_pool); 
+    poolListen(pool); 
 
     while(1){
     // Recepción de paquetes
-        poolProcessPacket(s, &si_miner);
+        poolProcessPacket(pool);
     }
 
-    poolDestroy(s);
+    poolDestroy(pool);
     return 0;
 }

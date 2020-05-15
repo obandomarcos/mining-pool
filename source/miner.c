@@ -16,32 +16,43 @@
 #define NPACK 10
 #define PORT 9930
 
-int minerInit(char *pool_name, struct hostent *pool, struct sockaddr_in *pool_addr){
-    
-    int sockfd;
+Miner_t * minerCreate()
+{
 
-    CHECK(sockfd=socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP));
+    Miner_t * miner = (Miner_t *)malloc(sizeof(Miner_t));
+    CHECK(miner != NULL);
 
-    pool = gethostbyname(pool_name);
-    CHECK(pool!=NULL);
-
-    memset(pool_addr, 0, sizeof(*pool_addr));
-    pool_addr -> sin_family = AF_INET;
-    memcpy(pool->h_addr, &pool_addr->sin_addr.s_addr, pool->h_length);
-    pool_addr->sin_port = htons(PORT);
-
-    return sockfd;
+    return miner;
 }
 
-void minerDestroy(int minersock){
+void minerInit(Miner_t * miner, char * pool_name)
+{   
+    miner -> minersock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    CHECK(miner -> minersock);
 
-    close(minersock);
+    miner -> pool = gethostbyname(pool_name);
+    CHECK(miner -> pool!=NULL);
+
+    memset(&miner -> pool_addr, 0, sizeof(miner -> pool_addr));
+    miner -> pool_addr.sin_family = AF_INET;
+
+    // con host ent podría conectarme a múltiples aaddresseeeees!!!!
+    memcpy(&miner -> pool -> h_addr, &miner -> pool_addr.sin_addr.s_addr, miner-> pool -> h_length);
+    miner -> pool_addr.sin_port = htons(PORT);
+
 }
 
-void minerSendPacket(int minersock, struct sockaddr_in *pool_addr, PacketType_t pType){
+void minerDestroy(Miner_t *miner){
+
+    close(miner -> minersock);
+
+    free(miner);
+}
+
+void minerSendPacket(Miner_t * miner, PacketType_t pType){
 
     Packet_t packet;
-    socklen_t slen=sizeof(*pool_addr);
+    socklen_t slen=sizeof(miner -> pool_addr);
 
     packet.type = pType;
     packet.sz8 = sizeof(packet.sz8)+sizeof(packet.type);
@@ -68,15 +79,15 @@ void minerSendPacket(int minersock, struct sockaddr_in *pool_addr, PacketType_t 
             break;
     }
 
-    CHECK(sendto(minersock, &packet, packet.sz8, 0, (struct sockaddr *)pool_addr, slen)!=-1);
+    CHECK(sendto(miner -> minersock, &packet, packet.sz8, 0, (struct sockaddr *)&miner -> pool_addr, slen)!=-1);
 }
 
-void minerProcessPacket(int minersock, struct sockaddr_in *pool_addr){
+void minerProcessPacket(Miner_t * miner){
 
     Packet_t packet;
-    socklen_t slen=sizeof(*pool_addr);
+    socklen_t slen = sizeof(miner -> pool_addr);
 
-    CHECK(recvfrom(minersock, &packet, sizeof(Packet_t), 0, (struct sockaddr *)pool_addr, &slen)!=-1);
+    CHECK(recvfrom(miner -> minersock, &packet, sizeof(Packet_t), 0, (struct sockaddr *)&miner -> pool_addr, &slen)!=-1);
     
     switch (packet.type)
     {
