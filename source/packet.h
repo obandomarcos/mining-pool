@@ -9,15 +9,26 @@ typedef enum
 {   
     // miner2pool
     connectPool,
+    reqNonce,
+    reqBlock,
+    submitNonce,
     disconnectPool,
-    sendNonce, 
 
     // pool2miner
     welcomeMiner,
-    reqNonce, 
+    sendNonce, 
+    sendBlock,
+    discardBlock,
+    failureBlock,
+    successBlock,
+    floodStop,
+    sendReward,
     farewellMiner
 
 } PacketType_t;
+
+
+// timestamp estaria bueno tambien
 
 typedef struct __attribute__((__packed__)) Packet{
     
@@ -33,11 +44,30 @@ typedef struct __attribute__((__packed__)) Packet{
 
         } args_connectPool;
         
+        struct  reqNonce_
+        {
+            int span;  // es una manera de ver la capacidad del minero
+
+        } args_reqNonce;
+        
+        struct reqBlock_
+        {
+
+        } args_reqBlock;
+
+        struct  submitNonce_
+        {   
+            char mensaje[MAX_SIZE_MSG];
+            int32_t goldNonce;
+
+        } args_submitNonce;
+
         struct  disconnectPool_
         {
             char mensaje[MAX_SIZE_MSG];
 
         } args_disconnectPool;
+
 
         // pool2miner
         struct  welcomeMiner_
@@ -45,6 +75,31 @@ typedef struct __attribute__((__packed__)) Packet{
             char mensaje[MAX_SIZE_MSG];
 
         } args_welcomeMiner;
+
+        struct  sendNonce_
+        {
+            int nonce;
+
+        } args_sendNonce;
+
+        struct  sendBlock_
+        {
+            int block;
+
+        } args_sendBlock;
+
+        struct  sendReward_
+        {   
+            uint32_t norm;
+            uint32_t reward;
+
+        } args_sendReward;
+        
+        struct  floodStop_
+        {
+            char mensaje[MAX_SIZE_MSG];
+
+        } args_floodStop;
         
         struct  farewellMiner_
         {

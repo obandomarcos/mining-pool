@@ -17,9 +17,11 @@
 #define NPACK 10
 #define PORT 9930
 
+void rutina1(Miner_t *miner);
+void rutina2(Miner_t *miner);
+
 int main(int argc, char *argv[])
 {   
-    char c;
     Miner_t *miner = minerCreate();
 
     CHECK(argc >= 2);
@@ -27,20 +29,59 @@ int main(int argc, char *argv[])
     minerInit(miner, argv[1]);
 
     //conexión
+    rutina2(miner);
+
+    minerDestroy(miner);
+    return 0;
+}
+
+void rutina2(Miner_t *miner){
+
+    minerSendPacket(miner, connectPool);
+
+    minerProcessPacket(miner);
+
+    minerProcessPacket(miner);
+}
+void rutina1(Miner_t *miner)
+{   
+    char c;
 
     minerSendPacket(miner, connectPool);
 
     minerProcessPacket(miner);
 
     c = getchar();
+    printf("%c\n", c);
+
+    // pido block
+    minerSendPacket(miner, reqBlock);
+
+    minerProcessPacket(miner);
+
+    c = getchar();
+    printf("Bloque %d\n", miner -> block);
+
+    // pido nonce
+    minerSendPacket(miner, reqBlock);
+
+    minerProcessPacket(miner);
+
+    c = getchar();
+    printf("Nonce %d\n", miner -> nonce);
+
+    miner -> nonce = 12;
+    // mando nonce
+    minerSendPacket(miner, submitNonce);
+
+    minerProcessPacket(miner);
+
+    c = getchar();
     printf("Entrada %c\n", c);
+
     //desconexión
     
     minerSendPacket(miner, disconnectPool);
 
     minerProcessPacket(miner);
-
-    minerDestroy(miner);
-    return 0;
 }
-

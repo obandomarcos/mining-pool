@@ -12,17 +12,39 @@
 #include "packet.h"
 #include "pool.h"
 
+void rutina1Pool(Pool_t *pool);
+void rutina2Pool(Pool_t *pool);
+
 int main(void)
 {
     Pool_t *pool = poolInit();
 
     poolListen(pool); 
 
+    rutina2Pool(pool);
+
+    poolDestroy(pool);
+    return 0;
+}
+
+void rutina1Pool(Pool_t *pool){
+    
     while(1){
     // Recepción de paquetes
         poolProcessPacket(pool);
     }
+    
+}
 
-    poolDestroy(pool);
-    return 0;
+void rutina2Pool(Pool_t *pool){
+    
+    pool -> miners = 0;
+    while(pool -> miners <= 2){
+    // Recepción de paquetes
+        poolProcessPacket(pool);
+        pool -> miners++;
+    }
+
+    poolSendPacket(pool, floodStop);
+    
 }

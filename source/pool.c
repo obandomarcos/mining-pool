@@ -12,16 +12,15 @@
 #include "packet.h"
 #include "pool.h"
 
-#define BUFLEN 512
-#define NPACK 10
-#define PORT 9930
-
 Pool_t * poolInit()
 {
 
     Pool_t * pool = (Pool_t *)malloc(sizeof(Pool_t));
     CHECK(pool != NULL);
-
+    
+    pool -> currentBlock = 42;
+    pool -> totRepartido = 1;
+    pool -> nonce = 0;
     return pool;
 }
 
@@ -38,16 +37,22 @@ void poolListen(Pool_t * pool)
     
     CHECK(bind(pool -> poolsock, (struct sockaddr *)&pool -> pool_addr, sizeof(pool -> pool_addr))!=-1);
 
+    // como el otro lo tengo conectado a todas las interfaces, no me quiero mandar cagadas
+    memset(&pool -> mcast_addr,0,sizeof(pool -> mcast_addr));
+    pool -> mcast_addr.sin_family = AF_INET;
+    pool -> mcast_addr.sin_addr.s_addr = inet_addr(MCAST_GROUP);
+    pool -> mcast_addr.sin_port = htons(MCAST_PORT);    
+
     printf("Escuchando desde el pool por nuevo minero\n");
 
 }
 
-void poolDestroy(Pool_t * pool){
+void poolDestroy(Pool_t * pool)
+{
 
     close(pool -> poolsock);
 
     free(pool);
-
 }
 
 // esta sería como un método privado
@@ -58,6 +63,7 @@ void poolSendPacket(Pool_t *pool, PacketType_t pType)
     packet.type = pType;
     packet.sz8 = sizeof(packet.sz8)+sizeof(packet.type);
 
+    // chetear las address y mandarlo luego de empaquetar mierda
     switch (pType)
     {
         case welcomeMiner:
@@ -70,12 +76,69 @@ void poolSendPacket(Pool_t *pool, PacketType_t pType)
 
         case farewellMiner:
         
-            packet.sz8 += sizeof(packet.args.args_connectPool);
+            packet.sz8 += sizeof(packet.args.args_farewellMiner);
             strcpy(packet.args.args_farewellMiner.mensaje, "Te saludamos desde MinaSim!\n");
 
             CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> miner_addr, (socklen_t)sizeof(pool -> miner_addr))!=-1);
             break;
+
+        case sendBlock:
+
+            packet.sz8 += sizeof(packet.args.args_sendBlock);
+
+            //función get nonce
+            packet.args.args_sendBlock.block = pool-> currentBlock; 
+
+            CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> miner_addr, (socklen_t)sizeof(pool -> miner_addr))!=-1);
+
+            break;
+        case sendNonce:
+
+            packet.sz8 += sizeof(packet.args.args_sendNonce);
+
+            //función get nonce
+            packet.args.args_sendNonce.nonce = 10; 
+
+            CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> miner_addr, (socklen_t)sizeof(pool -> miner_addr))!=-1);
+            break;
         
+        case discardBlock:
+            // logear el descarte
+            poolSendPacket(pool, sendNonce);
+            break;
+
+        case failureBlock:
+            // logear fallos , it's weird
+            poolSendPacket(pool, sendNonce);
+            break;
+
+        case successBlock:
+
+            poolSendPacket(pool, sendReward);
+            break;
+
+        // multicast acá
+
+        case floodStop : 
+            
+            packet.sz8 += sizeof(packet.args.args_floodStop);
+            
+            //función get nonce
+            strcpy(packet.args.args_floodStop.mensaje, "Basta de laburar\n");
+            CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> mcast_addr, (socklen_t)sizeof(pool -> mcast_addr))!=-1);
+
+            break;
+
+        // case sendReward:
+
+        //     packet.sz8 += sizeof(packet.args.args_sendReward);
+            
+        //     // el total repartido no siempre podría ser el ganado por el pool
+        //     packet.args.args_sendReward.norm = pool -> totRepartido;
+        //     packet.args.args_sendReward.reward = calculateReward(pool);
+
+        //     break;
+
         default:
             perror("Tipo de paquete no manipulable\n");
             exit(1);
@@ -83,7 +146,8 @@ void poolSendPacket(Pool_t *pool, PacketType_t pType)
     }
 }
 
-void poolProcessPacket(Pool_t *pool){
+void poolProcessPacket(Pool_t *pool)
+{
 
     Packet_t packet;
     socklen_t slen = sizeof(pool -> miner_addr);
@@ -96,7 +160,7 @@ void poolProcessPacket(Pool_t *pool){
             
             printf("%s", packet.args.args_welcomeMiner.mensaje);
             
-            // cargar a la lista de mineros
+            // cargar a la lista de mineross
 
             poolSendPacket(pool, welcomeMiner);
             break;
@@ -109,6 +173,24 @@ void poolProcessPacket(Pool_t *pool){
             printf("%s", packet.args.args_disconnectPool.mensaje);
             break;
         
+        case reqNonce:
+
+            poolSendPacket(pool, sendNonce); 
+            break;
+
+        case reqBlock:
+
+            poolSendPacket(pool, sendBlock); 
+            break;
+
+        case submitNonce:
+
+            //acá voy a decidir en base al bloque si es bueno o malo y le mando la confirmación, también guardo el address
+            poolVerifyBlock(pool, packet.args.args_submitNonce.goldNonce);
+            // cambiar esto despues
+            poolSendPacket(pool, floodStop);
+            break;
+
         default:
             perror("Tipo de paquete no manipulable\n");
             exit(1);
@@ -117,4 +199,19 @@ void poolProcessPacket(Pool_t *pool){
     
     printf("Paquete recibido desde %s:%d\n\n", 
     inet_ntoa(pool -> miner_addr.sin_addr), ntohs(pool -> miner_addr.sin_port));
+}
+
+void poolVerifyBlock(Pool_t * pool, int32_t goldNonce)
+{   
+    pool -> nonce = goldNonce;
+    printf("Hacer función\n");
+}
+
+uint32_t calculateReward(Pool_t *pool)
+{
+    uint32_t reward = 1;
+    
+    printf("Hacer función\n");
+    
+    return reward;
 }
