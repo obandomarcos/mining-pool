@@ -11,20 +11,41 @@
 #include "common.h"
 #include "packet.h"
 #include "miner.h"
+#include "workers.h"
 
-#define BUFLEN 512
-#define NPACK 10
-#define PORT 9930
-
+// Creación y destrucción
 Miner_t * minerCreate()
 {
-
+    struct mq_attr attr = {0, 10, sizeof(WorkUnit_t), 0};
     Miner_t * miner = (Miner_t *)malloc(sizeof(Miner_t));
     CHECK(miner != NULL);
-    
+
+    miner -> reqQueue = mq_open(QUEUE_NAME, O_CREAT|O_RDWR,  0666, &attr);
+    CHECK(miner -> reqQueue != -1);
+
+    miner -> workers = workerInit(MAX_WORKERS);
+    CHECK(miner -> workers != NULL);
+
     return miner;
 }
 
+void minerDestroy(Miner_t *miner)
+{
+    int ret;
+
+    close(miner -> minersock);
+    workerDestroy(miner->workers);
+    
+    ret = mq_close(miner->reqQueue);
+    CHECK(ret == 0);
+
+    ret = mq_unlink(QUEUE_NAME);
+    CHECK(ret == 0);
+
+    free(miner);
+}
+
+// Protocolo de comunicación
 void minerInit(Miner_t * miner, char * pool_name)
 {      
     uint yes = 1;
@@ -73,15 +94,6 @@ void minerInit(Miner_t * miner, char * pool_name)
     CHECK(setsockopt(miner -> mcastsock,IPPROTO_IP,IP_ADD_MEMBERSHIP,&miner->group,sizeof(miner->group)) >= 0);
 
 }
-
-void minerDestroy(Miner_t *miner)
-{
-
-    close(miner -> minersock);
-
-    free(miner);
-}
-
 void minerSendPacket(Miner_t * miner, PacketType_t pType)
 {
 
@@ -140,7 +152,7 @@ void minerProcessPacket(Miner_t * miner)
 
     Packet_t packet;
     
-    packet = selectMachine(miner);
+    packet = packetRetrieval(miner);
 
     switch (packet.type)
     {
@@ -149,14 +161,19 @@ void minerProcessPacket(Miner_t * miner)
             printf("%s", packet.args.args_welcomeMiner.mensaje);
             break;
 
-        case sendNonce:
-
-            // sigo laburando no matter what
-            miner -> nonce = packet.args.args_sendNonce.nonce;
-        
         case sendBlock:
 
             miner -> block = packet.args.args_sendBlock.block;
+            break;
+        case sendNonce:
+
+
+            miner -> nonce = packet.args.args_sendNonce.nonce;
+            miner -> section = packet.args.args_sendNonce.section;
+            
+            minerLoadQueue(miner, 2);
+            
+            break;
 
         case sendReward :
 
@@ -179,7 +196,8 @@ void minerProcessPacket(Miner_t * miner)
     }
 }
 
-Packet_t packetRetrieval(Miner_t *miner){
+Packet_t packetRetrieval(Miner_t *miner)
+{
 
     Packet_t packet;
     int ready, maxfdp;
@@ -219,6 +237,38 @@ Packet_t packetRetrieval(Miner_t *miner){
     return packet;
 }
 
+// Funcionamiento : Inicio y finalización de busqueda de Hash
+
+void minerLoadQueue(Miner_t *miner, int workerQty)
+{
+
+    int i, ret, count = 0;
+    WorkUnit_t wu;
+    Context_t * contextMiner = NULL;
+
+   
+    for (i = miner -> nonce; i < (miner->nonce+miner->section); count++, i += miner->section/workerQty)
+    {   
+        contextMiner = malloc(sizeof(Context_t));
+
+        contextMiner->block = miner->block;
+        contextMiner->section = miner->section/workerQty;
+        contextMiner->nonce = i;
+    
+        wu.id = count;
+        wu.fun = hashBlock;
+        wu.context = (void *)contextMiner;
+
+        ret = mq_send(miner->reqQueue, (const char *)&wu, sizeof(WorkUnit_t), 0);
+        CHECK(ret == 0);
+    }
+
+    workerRun(miner -> workers, workerQty);
+    sleep(3);
+    workerStop(miner -> workers, workerQty);
+}
+
+// Funciones útiles
 int max(int x, int y) 
 { 
     if (x > y) 
@@ -226,3 +276,16 @@ int max(int x, int y)
     else
         return y; 
 } 
+
+void hashBlock(void *ctx)
+{
+    Context_t * context = (Context_t *)ctx;
+    int i;
+
+    for(i = context->nonce; i<(context->nonce+context->section); i++){
+
+        printf("%f\n",sin(i));
+    }   
+
+    free(context);
+}

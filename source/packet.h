@@ -79,6 +79,7 @@ typedef struct __attribute__((__packed__)) Packet{
         struct  sendNonce_
         {
             int nonce;
+            int section;
 
         } args_sendNonce;
 

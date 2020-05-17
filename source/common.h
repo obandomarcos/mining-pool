@@ -1,9 +1,6 @@
 #ifndef COMMON_H_
 #define COMMON_H_
 
-#define QUEUE_NAME  "/test_queue"
-#define MAX_SIZE    1024
-#define MSG_STOP    "exit"
 
 #define CHECK(x) \
     do { \

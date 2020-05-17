@@ -21,10 +21,17 @@ int main(void)
 
     poolListen(pool); 
 
-    rutina2Pool(pool);
+    rutina1Pool(pool);
 
     poolDestroy(pool);
     return 0;
+}
+
+// pruebo la cola del minero
+void rutina3Pool(Pool_t *pool){
+    
+    poolProcessPacket(pool);
+    
 }
 
 void rutina1Pool(Pool_t *pool){

@@ -1,9 +1,9 @@
 CC = gcc
-CFLAGS = -g -Wall
+CFLAGS = -g -Wall -pthread -lrt -lm
 
 default: all
 
 all: pool.c
-	$(CC) $(CFLAGS) -o pool mainpool.c pool.c
-	$(CC) $(CFLAGS) -o miner mainminer.c miner.c
+	$(CC) $(CFLAGS) -o pool mainpool.c pool.c workers.c -pthread -lrt -lm
+	$(CC) $(CFLAGS) -o miner mainminer.c miner.c workers.c -pthread -lrt -lm
 

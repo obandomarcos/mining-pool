@@ -19,6 +19,7 @@
 
 void rutina1(Miner_t *miner);
 void rutina2(Miner_t *miner);
+void rutina3(Miner_t *miner);
 
 int main(int argc, char *argv[])
 {   
@@ -29,10 +30,32 @@ int main(int argc, char *argv[])
     minerInit(miner, argv[1]);
 
     //conexión
-    rutina2(miner);
+    rutina3(miner);
 
     minerDestroy(miner);
     return 0;
+}
+
+
+void rutina3(Miner_t *miner){
+
+    minerSendPacket(miner, connectPool);
+
+    minerProcessPacket(miner);
+
+    minerSendPacket(miner, reqBlock);
+
+    minerProcessPacket(miner);
+
+    minerSendPacket(miner, reqNonce);
+
+    minerProcessPacket(miner);
+    
+    // acá laburo e imprimo
+
+    minerSendPacket(miner, disconnectPool);
+
+    minerProcessPacket(miner);
 }
 
 void rutina2(Miner_t *miner){

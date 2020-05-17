@@ -97,7 +97,8 @@ void poolSendPacket(Pool_t *pool, PacketType_t pType)
             packet.sz8 += sizeof(packet.args.args_sendNonce);
 
             //función get nonce
-            packet.args.args_sendNonce.nonce = 10; 
+            packet.args.args_sendNonce.nonce = 10;
+            packet.args.args_sendNonce.section = 20; 
 
             CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> miner_addr, (socklen_t)sizeof(pool -> miner_addr))!=-1);
             break;
@@ -125,6 +126,7 @@ void poolSendPacket(Pool_t *pool, PacketType_t pType)
             
             //función get nonce
             strcpy(packet.args.args_floodStop.mensaje, "Basta de laburar\n");
+            
             CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> mcast_addr, (socklen_t)sizeof(pool -> mcast_addr))!=-1);
 
             break;
