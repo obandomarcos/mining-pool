@@ -9,9 +9,12 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdbool.h>
+#include <openssl/sha.h>
 
 #include "common.h"
 
+#define BLOCKSIZE 15
 #define QUEUE_NAME "/work_queue"
 #define QUEUE_MAXMSG 20
 #define QUEUE_MSGSIZE 18
@@ -23,39 +26,53 @@ typedef unsigned int WorkerId;
 typedef unsigned int WorkUnitId;
 typedef void (*ProcFunc_t)(void *ctx);
 
-typedef struct __attribute__((__packed__)){
+typedef struct __attribute__((__packed__)) WorkUnit
+{
     WorkUnitId id;
     ProcFunc_t fun;
     void *context;
 } WorkUnit_t;
 
-typedef struct {
+typedef struct Worker 
+{
 
     WorkerId id; //los identifico porque los quiero
     int processing;
+    int32_t goldNonce;
     mqd_t reqQueue;
+    // la direccion donde escriben
+    int32_t *minerNonce;
     pthread_t thread_load;
 
 } Worker_t;
 
-typedef struct {
+typedef struct Context 
+{
     
-    int block;
-    int nonce;
-    int section;
+    char block[BLOCKSIZE];
+    int32_t nonce;
+    int32_t section;
+    int difficulty;
+    bool found;
 
 } Context_t;
 
-Worker_t * workerInit(int workerQty);
+Worker_t * workerInit( int workerQty, int32_t * pGoldNonce);
 
 // comienzo a procesar los threads de la cola
-void workerRun(Worker_t *worker, int workerQty);
+void workerRun(Worker_t *workers, int workerQty);
 
-void workerStop(Worker_t *worker, int workerQty);
+void workerStop(Worker_t *workers, int workerQty);
 
+void workerWait(Worker_t *workers, int workerQty);
 // hago laburar a uno de la lista de cosas que hay que hacer
-void *thread_load(void *ctx);
+void *thread_run(void *ctx);
 
-void workerDestroy(Worker_t *worker);
+// void workerCheck(Worker_t *workers, int workerQty);
+
+void workerDestroy(Worker_t *workers);
+
+//funciones del worker
+void hashBlock(void *ctx);
 
 #endif

@@ -1,6 +1,7 @@
 #ifndef COMMON_H_
 #define COMMON_H_
 
+#include <pthread.h>
 
 #define CHECK(x) \
     do { \

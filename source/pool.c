@@ -1,15 +1,3 @@
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <unistd.h>
-
-#include "common.h"
-#include "packet.h"
 #include "pool.h"
 
 Pool_t * poolInit()
@@ -18,9 +6,17 @@ Pool_t * poolInit()
     Pool_t * pool = (Pool_t *)malloc(sizeof(Pool_t));
     CHECK(pool != NULL);
     
-    pool -> currentBlock = 42;
-    pool -> totRepartido = 1;
-    pool -> nonce = 0;
+    srand(time(NULL));
+    poolReloadBlock(pool);
+
+    pool -> miners = 0;
+    pool -> minerDifficulty = 1;
+    pool -> poolDifficulty = 1;
+    pool -> section = 100;
+
+    // arranco con cero pesitos
+    pool -> poolWallet = 0;
+
     return pool;
 }
 
@@ -67,17 +63,18 @@ void poolSendPacket(Pool_t *pool, PacketType_t pType)
     switch (pType)
     {
         case welcomeMiner:
-        
+
             packet.sz8 += sizeof(packet.args.args_welcomeMiner);
-            strcpy(packet.args.args_welcomeMiner.mensaje, "¡Bienvenido a MinaSim!\n");
             
+            strcpy(packet.args.args_welcomeMiner.mensaje, "¡Bienvenido a Bandis!\n");
+
             CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> miner_addr, (socklen_t)sizeof(pool -> miner_addr))!=-1);
             break;
 
         case farewellMiner:
         
             packet.sz8 += sizeof(packet.args.args_farewellMiner);
-            strcpy(packet.args.args_farewellMiner.mensaje, "Te saludamos desde MinaSim!\n");
+            strcpy(packet.args.args_farewellMiner.mensaje, "Te saludamos desde Bandis\n");
 
             CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> miner_addr, (socklen_t)sizeof(pool -> miner_addr))!=-1);
             break;
@@ -87,18 +84,25 @@ void poolSendPacket(Pool_t *pool, PacketType_t pType)
             packet.sz8 += sizeof(packet.args.args_sendBlock);
 
             //función get nonce
-            packet.args.args_sendBlock.block = pool-> currentBlock; 
+            strcpy(packet.args.args_sendBlock.block, pool-> block); 
+            // Envío dificultad
+            packet.args.args_sendBlock.difficulty = pool->minerDifficulty;
 
-            CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> miner_addr, (socklen_t)sizeof(pool -> miner_addr))!=-1);
+            CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> miner_addr, (socklen_t)sizeof(pool -> miner_addr)) !=-1);
 
             break;
+
         case sendNonce:
 
             packet.sz8 += sizeof(packet.args.args_sendNonce);
 
-            //función get nonce
-            packet.args.args_sendNonce.nonce = 10;
-            packet.args.args_sendNonce.section = 20; 
+            // Envío nonce
+            packet.args.args_sendNonce.nonce = pool -> nonce;
+
+            // Envío sección (se la envío porque podría ser variable la sección que entrego)            
+            pool -> nonce += pool->section; 
+            packet.args.args_sendNonce.section = pool -> section; 
+
 
             CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> miner_addr, (socklen_t)sizeof(pool -> miner_addr))!=-1);
             break;
@@ -106,16 +110,23 @@ void poolSendPacket(Pool_t *pool, PacketType_t pType)
         case discardBlock:
             // logear el descarte
             poolSendPacket(pool, sendNonce);
+
+            CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> mcast_addr, (socklen_t)sizeof(pool -> mcast_addr))!=-1);
             break;
 
         case failureBlock:
-            // logear fallos , it's weird
+            // logear fallos? NO , it's weird
             poolSendPacket(pool, sendNonce);
+
+            CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> mcast_addr, (socklen_t)sizeof(pool -> mcast_addr))!=-1);
             break;
 
         case successBlock:
+            
+            printf("Encontraron el bloque\n");
+            strcpy(packet.args.args_successBlock.mensaje, "Lo encontraste, ahí paro todo\n");
 
-            poolSendPacket(pool, sendReward);
+            CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> mcast_addr, (socklen_t)sizeof(pool -> mcast_addr))!=-1);
             break;
 
         // multicast acá
@@ -131,15 +142,20 @@ void poolSendPacket(Pool_t *pool, PacketType_t pType)
 
             break;
 
-        // case sendReward:
+        // falta esto
+        case sendReward:
 
-        //     packet.sz8 += sizeof(packet.args.args_sendReward);
+            packet.sz8 += sizeof(packet.args.args_sendReward);
+
+            // le escribo todas las felicitaciones
+            strcpy(packet.args.args_sendReward.mensaje, "Basta de laburar, lo encontraste\n");
             
-        //     // el total repartido no siempre podría ser el ganado por el pool
-        //     packet.args.args_sendReward.norm = pool -> totRepartido;
-        //     packet.args.args_sendReward.reward = calculateReward(pool);
+            // le paso la recompensa por su arduo trabajo
+            packet.args.args_sendReward.reward = poolCalculateReward(pool);
 
-        //     break;
+
+            CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> miner_addr, (socklen_t)sizeof(pool -> miner_addr))!=-1);
+            break;
 
         default:
             perror("Tipo de paquete no manipulable\n");
@@ -162,7 +178,8 @@ void poolProcessPacket(Pool_t *pool)
             
             printf("%s", packet.args.args_welcomeMiner.mensaje);
             
-            // cargar a la lista de mineross
+            // cargar a la lista de mineross, por ahora solo sumo una
+            pool -> miners += 1;
 
             poolSendPacket(pool, welcomeMiner);
             break;
@@ -170,13 +187,16 @@ void poolProcessPacket(Pool_t *pool)
         case disconnectPool:
 
             poolSendPacket(pool, farewellMiner);
-
-            // getear de la lista de mineros
+            
+            // getear de la lista de mineros, por ahora solo resto uno
+            pool -> miners -= 1;
+            
             printf("%s", packet.args.args_disconnectPool.mensaje);
             break;
         
         case reqNonce:
-
+            
+            printf("Pedido de nonce\n");
             poolSendPacket(pool, sendNonce); 
             break;
 
@@ -189,8 +209,6 @@ void poolProcessPacket(Pool_t *pool)
 
             //acá voy a decidir en base al bloque si es bueno o malo y le mando la confirmación, también guardo el address
             poolVerifyBlock(pool, packet.args.args_submitNonce.goldNonce);
-            // cambiar esto despues
-            poolSendPacket(pool, floodStop);
             break;
 
         default:
@@ -205,15 +223,88 @@ void poolProcessPacket(Pool_t *pool)
 
 void poolVerifyBlock(Pool_t * pool, int32_t goldNonce)
 {   
-    pool -> nonce = goldNonce;
-    printf("Hacer función\n");
+    BlockDiffType_t diffType;
+
+    diffType = hashCheckBlock(pool, goldNonce);
+
+    switch(diffType)
+    {
+        case noDif:
+
+            poolSendPacket(pool, failureBlock);
+            break;
+
+        case minDif:
+            printf("Sacó uno facil\n");
+            // guardar el bloque y felicitar, pero que siga laburando por que la verdad es que no hizo una poronga
+            poolSendPacket(pool, discardBlock);
+            break;
+
+        case poolDif:
+            
+            printf("Sacó uno difícil\n");
+            poolSendPacket(pool, successBlock);
+            poolSendPacket(pool, floodStop);
+            poolSendPacket(pool, sendReward);
+
+            // // aquí deberia comenzar todo de vuelta
+            // poolReloadBlock(pool);
+
+            // loggear el bloque, floodear el pool y felicitar con recompensas a todes
+            break;
+    }
 }
 
-uint32_t calculateReward(Pool_t *pool)
+// vuelvo a reiniciar todas las variables de bloque y nonce
+void poolReloadBlock(Pool_t *pool)
+{   
+    int randint = (int)(1.0*rand()*1000/RAND_MAX);
+
+    // Initialization, should only be called once.
+    sprintf(pool -> block, "%s%d", "bloque", randint);
+    pool -> nonce = 0;
+
+}
+
+// funcion para pool verify block
+BlockDiffType_t hashCheckBlock(Pool_t *pool, int32_t nonce)
+{   
+    char cNonce[SHA_DIGEST_LENGTH];
+    char digest[SHA_DIGEST_LENGTH];
+    char test[SHA_DIGEST_LENGTH];
+    
+    //seteo en cero a todos los elementos del bloque de testeo
+    memset(test, 0, sizeof(test));
+
+    // pego el contenido del bloque al nonce
+    sprintf(cNonce, "%s%d", pool->block, nonce);
+
+    // obtengo el hash del bloque+nonce
+    SHA1((unsigned char*)cNonce, strlen(cNonce), (unsigned char*)digest);
+
+    if (!memcmp(test, digest, pool->minerDifficulty*sizeof(char))){
+
+      if(!memcmp(test, digest, pool->poolDifficulty*sizeof(char)))
+      { 
+        
+        return poolDif;
+      
+      }
+      else{
+        
+        return minDif;
+      
+      }
+    }
+    else return noDif;
+}
+
+// hago función basicona que le reparta a todos por igual y me pague el resto en mi billetera
+int poolCalculateReward(Pool_t *pool)
 {
-    uint32_t reward = 1;
+    int rewardMiner = (pool->blockValue - pool->gainPool)/pool -> miners;
     
-    printf("Hacer función\n");
+    pool -> poolWallet += pool->gainPool;
     
-    return reward;
+    return rewardMiner;
 }

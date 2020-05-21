@@ -1,17 +1,8 @@
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#include <netdb.h> 
 #include "common.h"
 #include "packet.h"
 #include "miner.h"
 #include "workers.h"
+
 
 // Creación y destrucción
 Miner_t * minerCreate()
@@ -22,9 +13,11 @@ Miner_t * minerCreate()
 
     miner -> reqQueue = mq_open(QUEUE_NAME, O_CREAT|O_RDWR,  0666, &attr);
     CHECK(miner -> reqQueue != -1);
-
-    miner -> workers = workerInit(MAX_WORKERS);
-    CHECK(miner -> workers != NULL);
+    miner -> goldNonce = -1;
+    
+    miner -> workerQty = MAX_WORKERS;
+    miner -> workers = NULL;
+    miner -> wallet = 0;
 
     return miner;
 }
@@ -34,10 +27,7 @@ void minerDestroy(Miner_t *miner)
     int ret;
 
     close(miner -> minersock);
-    workerDestroy(miner->workers);
-    
-    ret = mq_close(miner->reqQueue);
-    CHECK(ret == 0);
+    close(miner -> mcastsock);
 
     ret = mq_unlink(QUEUE_NAME);
     CHECK(ret == 0);
@@ -50,6 +40,8 @@ void minerInit(Miner_t * miner, char * pool_name)
 {      
     uint yes = 1;
     struct timeval read_timeout;
+
+    miner->active = true;
 
     miner -> minersock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
     CHECK(miner -> minersock);
@@ -64,8 +56,6 @@ void minerInit(Miner_t * miner, char * pool_name)
     miner -> pool_addr.sin_port = htons(PORT);
 
     // modifico el socket para recibir multicast (estaría bueno recibir la dirección de multicast de parte del minero y que se configure)
-
-
 
     miner -> mcastsock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
     CHECK(miner -> mcastsock);
@@ -94,6 +84,7 @@ void minerInit(Miner_t * miner, char * pool_name)
     CHECK(setsockopt(miner -> mcastsock,IPPROTO_IP,IP_ADD_MEMBERSHIP,&miner->group,sizeof(miner->group)) >= 0);
 
 }
+
 void minerSendPacket(Miner_t * miner, PacketType_t pType)
 {
 
@@ -121,16 +112,16 @@ void minerSendPacket(Miner_t * miner, PacketType_t pType)
         case reqBlock:
 
             packet.sz8 += sizeof(packet.args.args_reqBlock);
-            // algo de info sobre el bloque que pido
             break;
         
         case submitNonce:
 
             packet.sz8 += sizeof(packet.args.args_submitNonce);
             strcpy(packet.args.args_submitNonce.mensaje, "Encontré un blocardo\n");
-            packet.args.args_submitNonce.goldNonce = (miner -> nonce+10);
+            packet.args.args_submitNonce.goldNonce = miner->goldNonce;
 
             break;
+
         case disconnectPool:
 
             packet.sz8 += sizeof(packet.args.args_disconnectPool);
@@ -158,26 +149,38 @@ void minerProcessPacket(Miner_t * miner)
     {
         case welcomeMiner:
 
-            printf("%s", packet.args.args_welcomeMiner.mensaje);
+            printf("%s\n", packet.args.args_welcomeMiner.mensaje);
             break;
 
         case sendBlock:
 
-            miner -> block = packet.args.args_sendBlock.block;
+            // me cargo el bloque y la dificultad
+            strcpy(miner -> block, packet.args.args_sendBlock.block);
+            miner -> curDifficulty = packet.args.args_sendBlock.difficulty;
+
             break;
+
         case sendNonce:
 
-
+            // me cargo un nuevo nonce para hashear
             miner -> nonce = packet.args.args_sendNonce.nonce;
             miner -> section = packet.args.args_sendNonce.section;
             
-            minerLoadQueue(miner, 2);
-            
+            minerLoadQueue(miner);
+            minerRun(miner); // laburo hasta encontrar resultados ó terminar la sec
+            break;
+
+        case successBlock:
+
+            printf("%s\n", packet.args.args_successBlock.mensaje);
             break;
 
         case sendReward :
 
             miner->wallet += packet.args.args_sendReward.reward;
+
+            printf("%s\n", packet.args.args_sendReward.mensaje);
+            break;
 
         case farewellMiner:
             
@@ -185,8 +188,9 @@ void minerProcessPacket(Miner_t * miner)
             break;
         
         case floodStop:
-
-            printf("%s\n", packet.args.args_floodStop.mensaje );
+            
+            miner -> active = false;
+            printf("%s\n", packet.args.args_floodStop.mensaje);
             break;
             
         default:
@@ -239,33 +243,63 @@ Packet_t packetRetrieval(Miner_t *miner)
 
 // Funcionamiento : Inicio y finalización de busqueda de Hash
 
-void minerLoadQueue(Miner_t *miner, int workerQty)
+void minerLoadQueue(Miner_t *miner)
 {
 
-    int i, ret, count = 0;
+    int i, sec, ret, count = 0;
     WorkUnit_t wu;
     Context_t * contextMiner = NULL;
 
+    sec = miner->section/miner->workerQty;
    
-    for (i = miner -> nonce; i < (miner->nonce+miner->section); count++, i += miner->section/workerQty)
+    for (i = miner -> nonce; i < (miner->nonce+miner->section); count++, i += sec)
     {   
+        // creo un contexto para cada wu
         contextMiner = malloc(sizeof(Context_t));
 
-        contextMiner->block = miner->block;
-        contextMiner->section = miner->section/workerQty;
-        contextMiner->nonce = i;
-    
+        // pego el bloque, la sección a minar, el nonce donde comenzar, la dificultad y que todavia no está minado ~ false
+        strcpy(contextMiner->block, miner->block);
+        contextMiner -> section = sec;
+        contextMiner -> nonce = i;
+        contextMiner -> difficulty = miner -> curDifficulty;
+        contextMiner -> found = false;
+
+        // info acerca del workunit
         wu.id = count;
         wu.fun = hashBlock;
         wu.context = (void *)contextMiner;
 
+        // subo a la cola de requerimientos el trabajo
         ret = mq_send(miner->reqQueue, (const char *)&wu, sizeof(WorkUnit_t), 0);
         CHECK(ret == 0);
     }
+}
 
-    workerRun(miner -> workers, workerQty);
-    sleep(3);
-    workerStop(miner -> workers, workerQty);
+void minerRun(Miner_t *miner){
+
+    miner-> workers = workerInit(miner -> workerQty,  &miner->goldNonce);
+    CHECK(miner -> workers != NULL);
+    // inicializo una cantidad de workers y les paso a donde tienen que escribir
+    workerRun(miner->workers, miner->workerQty);
+
+    workerWait(miner->workers, miner->workerQty);
+    // workerCheck(miner->workers, miner->workerQty);
+}
+
+// limpio la cola de mensajes y mis workers brutamente
+void minerFlush(Miner_t *miner){
+
+    int ret;
+    struct mq_attr attr = {0, 10, sizeof(WorkUnit_t), 0};
+
+    ret = mq_close(miner->reqQueue);
+    CHECK(ret == 0);
+
+    miner -> reqQueue = mq_open(QUEUE_NAME, O_CREAT|O_RDWR,  0666, &attr);
+    CHECK(miner -> reqQueue != -1);
+    miner -> goldNonce = -1;
+
+    workerDestroy(miner->workers);
 }
 
 // Funciones útiles
@@ -277,15 +311,3 @@ int max(int x, int y)
         return y; 
 } 
 
-void hashBlock(void *ctx)
-{
-    Context_t * context = (Context_t *)ctx;
-    int i;
-
-    for(i = context->nonce; i<(context->nonce+context->section); i++){
-
-        printf("%f\n",sin(i));
-    }   
-
-    free(context);
-}

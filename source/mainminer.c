@@ -17,9 +17,11 @@
 #define NPACK 10
 #define PORT 9930
 
-void rutina1(Miner_t *miner);
-void rutina2(Miner_t *miner);
-void rutina3(Miner_t *miner);
+void rutina4(Miner_t *miner);
+void connMiner(Miner_t *miner);
+void discMiner(Miner_t *miner);
+void reqblockMiner(Miner_t * miner);
+void reqnonceMiner(Miner_t * miner);
 
 int main(int argc, char *argv[])
 {   
@@ -30,81 +32,72 @@ int main(int argc, char *argv[])
     minerInit(miner, argv[1]);
 
     //conexión
-    rutina3(miner);
+    rutina4(miner);
 
     minerDestroy(miner);
     return 0;
 }
 
-
-void rutina3(Miner_t *miner){
-
+void connMiner(Miner_t *miner)
+{
     minerSendPacket(miner, connectPool);
-
-    minerProcessPacket(miner);
-
-    minerSendPacket(miner, reqBlock);
-
-    minerProcessPacket(miner);
-
-    minerSendPacket(miner, reqNonce);
-
-    minerProcessPacket(miner);
-    
-    // acá laburo e imprimo
-
-    minerSendPacket(miner, disconnectPool);
-
     minerProcessPacket(miner);
 }
 
-void rutina2(Miner_t *miner){
-
-    minerSendPacket(miner, connectPool);
-
-    minerProcessPacket(miner);
-
-    minerProcessPacket(miner);
-}
-void rutina1(Miner_t *miner)
+void reqblockMiner(Miner_t * miner)
 {   
-    char c;
-
-    minerSendPacket(miner, connectPool);
-
-    minerProcessPacket(miner);
-
-    c = getchar();
-    printf("%c\n", c);
-
-    // pido block
     minerSendPacket(miner, reqBlock);
-
     minerProcessPacket(miner);
+}
 
-    c = getchar();
-    printf("Bloque %d\n", miner -> block);
-
-    // pido nonce
-    minerSendPacket(miner, reqBlock);
-
+void reqnonceMiner(Miner_t * miner)
+{   
+    minerSendPacket(miner, reqNonce);
     minerProcessPacket(miner);
+}
 
-    c = getchar();
-    printf("Nonce %d\n", miner -> nonce);
-
-    miner -> nonce = 12;
-    // mando nonce
-    minerSendPacket(miner, submitNonce);
-
-    minerProcessPacket(miner);
-
-    c = getchar();
-    printf("Entrada %c\n", c);
-
-    //desconexión
-    
+void discMiner(Miner_t *miner)
+{
     minerSendPacket(miner, disconnectPool);
-
     minerProcessPacket(miner);
+}
+
+void stateMiner(Miner_t *miner)
+{   
+    if (miner -> goldNonce != -1)
+    {
+        printf("Lo encontramos\n");
+        minerSendPacket(miner, submitNonce);
+        // successBlock
+        minerProcessPacket(miner);
+        // flood stop, esto lo quisiera escuchar en otro proceso
+        minerProcessPacket(miner);
+    }
+    else 
+    {
+        printf("Ja la estoy cagando\n");
+        reqnonceMiner(miner);
+    }
+
+}
+
+void rutina4(Miner_t *miner)
+{
+
+    // me conecto
+    connMiner(miner);
+    reqblockMiner(miner);
+
+    while(miner -> active){
+        
+        reqnonceMiner(miner);
+        stateMiner(miner);
+        printf("%d\n", miner->active);
+    }
+
+    // recibo recompensa y me desconecto
+    minerProcessPacket(miner);
+
+    printf("%d\n", miner->wallet);
+    discMiner(miner);
 }
