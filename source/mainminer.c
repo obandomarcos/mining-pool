@@ -31,29 +31,33 @@ int main(int argc, char *argv[])
 
     minerInit(miner, argv[1]);
 
-    //conexión
-    rutina4(miner);
-
+    minerSendPacket(miner, connectPool);
+    minerProcessPacket(miner);
+    printf("%d\n", miner->active);
+    while(miner->active)
+    {   
+        printf("%d\n", miner->active);
+        minerProcessPacket(miner);
+    }
+    
     minerDestroy(miner);
+    
     return 0;
 }
 
 void connMiner(Miner_t *miner)
 {
     minerSendPacket(miner, connectPool);
-    minerProcessPacket(miner);
 }
 
 void reqblockMiner(Miner_t * miner)
 {   
     minerSendPacket(miner, reqBlock);
-    minerProcessPacket(miner);
 }
 
 void reqnonceMiner(Miner_t * miner)
 {   
     minerSendPacket(miner, reqNonce);
-    minerProcessPacket(miner);
 }
 
 void discMiner(Miner_t *miner)
@@ -78,7 +82,6 @@ void stateMiner(Miner_t *miner)
         printf("Ja la estoy cagando\n");
         reqnonceMiner(miner);
     }
-
 }
 
 void rutina4(Miner_t *miner)

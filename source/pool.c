@@ -14,6 +14,9 @@ Pool_t * poolInit()
     pool -> poolDifficulty = 1;
     pool -> section = 100;
 
+    // valores para repartición
+    pool -> blockValue = 12.5;
+    pool -> gainPool = 5;
     // arranco con cero pesitos
     pool -> poolWallet = 0;
 
@@ -67,7 +70,7 @@ void poolSendPacket(Pool_t *pool, PacketType_t pType)
             packet.sz8 += sizeof(packet.args.args_welcomeMiner);
             
             strcpy(packet.args.args_welcomeMiner.mensaje, "¡Bienvenido a Bandis!\n");
-
+            printf("Enviando saludo...\n");
             CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> miner_addr, (socklen_t)sizeof(pool -> miner_addr))!=-1);
             break;
 
@@ -185,13 +188,13 @@ void poolProcessPacket(Pool_t *pool)
             break;
 
         case disconnectPool:
-
-            poolSendPacket(pool, farewellMiner);
             
             // getear de la lista de mineros, por ahora solo resto uno
             pool -> miners -= 1;
             
             printf("%s", packet.args.args_disconnectPool.mensaje);
+            poolSendPacket(pool, farewellMiner);
+            
             break;
         
         case reqNonce:
@@ -212,7 +215,8 @@ void poolProcessPacket(Pool_t *pool)
             break;
 
         default:
-            perror("Tipo de paquete no manipulable\n");
+            
+            perror("Tipo de paquete no manipulable\n");            
             exit(1);
             break;
     }
@@ -302,7 +306,7 @@ BlockDiffType_t hashCheckBlock(Pool_t *pool, int32_t nonce)
 // hago función basicona que le reparta a todos por igual y me pague el resto en mi billetera
 int poolCalculateReward(Pool_t *pool)
 {
-    int rewardMiner = (pool->blockValue - pool->gainPool)/pool -> miners;
+    float rewardMiner = (pool->blockValue - pool->gainPool)/pool -> miners;
     
     pool -> poolWallet += pool->gainPool;
     

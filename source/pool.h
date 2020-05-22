@@ -43,11 +43,11 @@ typedef struct Pool
     char block[BLOCKSIZE];
     
     // Valores para recompensa
-    int blockValue;
-    int gainPool;
+    float blockValue;
+    float gainPool;
 
     // billetera del pool
-    int32_t poolWallet;
+    float poolWallet;
 
     // para los mineros
     int32_t nonce;

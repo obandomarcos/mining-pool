@@ -25,6 +25,7 @@
 #define HASH_INPUT 20
 #define HASH_OUTPUT 20
 #define BLOCKSIZE 15
+#define MAX_ITER 4
 
 typedef struct Miner
 {
@@ -51,6 +52,7 @@ typedef struct Miner
     Worker_t *workers;
     int workerQty;
     mqd_t reqQueue; 
+    int count;
 
     // solo escribo esto cuando lo encontré
     int32_t goldNonce;
