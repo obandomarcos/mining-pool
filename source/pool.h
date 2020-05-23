@@ -74,6 +74,6 @@ void poolReloadBlock(Pool_t *pool);
 
 // funciones útiles
 BlockDiffType_t hashCheckBlock(Pool_t *pool, int32_t nonce);
-int poolCalculateReward(Pool_t *pool);
+float poolCalculateReward(Pool_t *pool);
 
 #endif //PACKET_H_

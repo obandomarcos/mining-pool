@@ -4,26 +4,47 @@
 #include <stdint.h>
 #include <stdlib.h>
 #define MAX_SIZE_MSG 1024
+#define BLOCKSIZE 15
+
+
+// máscaras de checkeo
+typedef enum
+{   
+    // casting
+    multicastMask = 0x200,
+
+    // entity
+    entityMask = 0x100
+
+} MaskType_t;
+
+// type structure
+// DEXXX where
+// D : deliverance type, Multicast (1) or Unicast (0)
+// E : entity type of connection : miner2pool (0) or pool2miner (1)
+// X : message identifier
 
 typedef enum
 {   
     // miner2pool
-    connectPool,
-    reqNonce,
-    reqBlock,
-    submitNonce,
-    disconnectPool,
+    connectPool = 0x1 ,
+    reqNonce = 0x2,
+    reqBlock = 0x4,
+    submitNonce = 0x8,
+    disconnectPool = 0x10,
 
     // pool2miner
-    welcomeMiner,
-    sendNonce, 
-    sendBlock,
-    discardBlock,
-    failureBlock,
-    successBlock,
-    floodStop,
-    sendReward,
-    farewellMiner
+    // unicast
+    welcomeMiner = 0x20| entityMask,
+    sendNonce = 0x40| entityMask, 
+    sendBlock = 0x80| entityMask,
+    discardBlock = 0x11| entityMask,
+    failureBlock = 0x21| entityMask,
+    successBlock = 0x41| entityMask,
+    farewellMiner = 0x81| entityMask,
+    // multicast
+    floodStop = 0x22 | entityMask | multicastMask ,
+    sendReward = 0x42 | entityMask | multicastMask 
 
 } PacketType_t;
 
@@ -46,7 +67,6 @@ typedef struct __attribute__((__packed__)) Packet{
         
         struct  reqNonce_
         {
-            int span;  // es una manera de ver la capacidad del minero
 
         } args_reqNonce;
         
@@ -78,21 +98,29 @@ typedef struct __attribute__((__packed__)) Packet{
 
         struct  sendNonce_
         {
-            int nonce;
-            int section;
+            int32_t nonce;
+            int32_t section;
 
         } args_sendNonce;
 
         struct  sendBlock_
         {
-            int block;
-
+            char block[BLOCKSIZE];
+            int32_t difficulty;
+            
         } args_sendBlock;
+
+        struct  successBlock_
+        {
+            char mensaje[MAX_SIZE_MSG];
+
+        } args_successBlock;
 
         struct  sendReward_
         {   
-            uint32_t norm;
-            uint32_t reward;
+            // uint32_t norm;
+            float reward;
+            char mensaje[MAX_SIZE_MSG];
 
         } args_sendReward;
         

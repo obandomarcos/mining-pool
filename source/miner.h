@@ -26,6 +26,7 @@
 #define HASH_OUTPUT 20
 #define BLOCKSIZE 15
 #define MAX_ITER 4
+#define MAX_NAME_MINER 20
 
 typedef struct Miner
 {
@@ -42,6 +43,7 @@ typedef struct Miner
 
     // MINA'S attributes
     bool active;
+    char minerId[MAX_NAME_MINER];
 
     int32_t nonce;
     int32_t section;
@@ -58,19 +60,19 @@ typedef struct Miner
     int32_t goldNonce;
 
     // mi platita
-    uint32_t wallet;
+    float wallet;
 } Miner_t;
 
 
 // Creación y destrucción
-Miner_t * minerCreate();
+Miner_t * minerCreate(char * minerId);
 void minerDestroy(Miner_t *miner);
 
 // Protocolo de comunicación
 void minerInit(Miner_t * miner, char * pool_name);
 void minerSendPacket(Miner_t * miner, PacketType_t pType);
 void minerProcessPacket(Miner_t * miner);
-Packet_t packetRetrieval(Miner_t *miner);
+Packet_t * packetRetrieval(Miner_t *miner);
 
 // Funcionamiento : Inicio y finalización de busqueda de Hash
 void minerLoadQueue(Miner_t *miner);

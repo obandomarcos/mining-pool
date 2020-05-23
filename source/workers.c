@@ -2,13 +2,13 @@
 
 pthread_mutex_t goldNonceMutex = PTHREAD_MUTEX_INITIALIZER;
 
-Worker_t * workerInit(int workerQty, int32_t * pGoldNonce){
+Worker_t * workerInit(int workerQty, int32_t * pGoldNonce, char *minerQueue){
     
     int i;
     Worker_t *workers;
     
     // solo puedo recibir mensajes de la cola
-    mqd_t cola = mq_open(QUEUE_NAME, O_RDONLY);
+    mqd_t cola = mq_open(minerQueue, O_RDONLY);
     CHECK(cola != -1);
 
     //cargo una cantidad de trabajadores
@@ -81,25 +81,6 @@ void workerWait(Worker_t *workers, int workerQty){
     }
 }
 
-// checkeo si el gold nonce del worker cambio. si así fue, paro todo a la pija
-// void workerCheck(Worker_t *workers, int workerQty)
-// {   
-//     int finished = 0;
-//     int i = 0;
-
-//     // si tengo el gold nonce en caca, 
-//     // o sigue alguno trabajando, loopeo
-//     while(*workers[i].minerNonce == -1 || finished < workerQty)
-//     {
-//         // Tengo que chequear el nonce y si terminaron de trabajar
-//         workers[i];
-
-//         i = (i+1)%workerQty;
-//     }
-
-// }
-
-
 // hago laburar a un worker de la lista de cosas que hay que hacer. Puede terminar porque se le acabó la cola de requerimientos o porque lo encontró, pero si o si escrbo que processing terminó
 void *thread_run(void *ctx)
 {
@@ -127,7 +108,7 @@ void *thread_run(void *ctx)
 
                 
                 worker->processing = false;
-                printf("Worker %d timed out\n", worker->id);
+                // printf("Worker %d timed out\n", worker->id);
                 
                 free(wu);
                 return NULL;
@@ -141,16 +122,13 @@ void *thread_run(void *ctx)
         // me guardo el contexto
         context = (Context_t *)wu -> context;
 
-        printf("Work unit id %d\n", wu->id);
+        // printf("Work unit id %d\n", wu->id);
 
         mq_getattr(worker->reqQueue, &attr);
         // printf("quedan %li mensajes en la cola\n", attr.mq_curmsgs);
         
         // calculo la función de hash hasta que me quede sin nonce a minar o lo encuentre
         wu -> fun(context);
-        // printf("%d\n", context-> found);
-        // si lo encuentro, aviso al worker que ya está de procesar
-        // printf("Nonce dorado actual %d\n", *worker->minerNonce);
 
         if (context -> found)
         {

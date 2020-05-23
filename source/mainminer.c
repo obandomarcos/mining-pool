@@ -25,15 +25,17 @@ void reqnonceMiner(Miner_t * miner);
 
 int main(int argc, char *argv[])
 {   
-    Miner_t *miner = minerCreate();
+    Miner_t *miner;
 
-    CHECK(argc >= 2);
-
+    CHECK(argc > 2);
+    
+    miner = minerCreate(argv[2]);
     minerInit(miner, argv[1]);
 
     minerSendPacket(miner, connectPool);
     minerProcessPacket(miner);
     printf("%d\n", miner->active);
+
     while(miner->active)
     {   
         printf("%d\n", miner->active);
@@ -101,6 +103,6 @@ void rutina4(Miner_t *miner)
     // recibo recompensa y me desconecto
     minerProcessPacket(miner);
 
-    printf("%d\n", miner->wallet);
+    printf("%f\n", miner->wallet);
     discMiner(miner);
 }

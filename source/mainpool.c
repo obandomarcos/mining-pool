@@ -27,31 +27,11 @@ int main(void)
     return 0;
 }
 
-// pruebo la cola del minero
-void rutina3Pool(Pool_t *pool){
-    
-    poolProcessPacket(pool);
-    
-}
-
 void rutina1Pool(Pool_t *pool){
     
     while(1){
     // Recepción de paquetes
         poolProcessPacket(pool);
     }
-    
-}
-
-void rutina2Pool(Pool_t *pool){
-    
-    pool -> miners = 0;
-    while(pool -> miners <= 2){
-    // Recepción de paquetes
-        poolProcessPacket(pool);
-        pool -> miners++;
-    }
-
-    poolSendPacket(pool, floodStop);
     
 }

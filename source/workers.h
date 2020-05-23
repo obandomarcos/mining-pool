@@ -15,7 +15,6 @@
 #include "common.h"
 
 #define BLOCKSIZE 15
-#define QUEUE_NAME "/work_queue"
 #define QUEUE_MAXMSG 20
 #define QUEUE_MSGSIZE 18
 #define QUEUE_PERMS ((int)(0644))
@@ -57,7 +56,7 @@ typedef struct Context
 
 } Context_t;
 
-Worker_t * workerInit( int workerQty, int32_t * pGoldNonce);
+Worker_t * workerInit( int workerQty, int32_t * pGoldNonce, char *minerQueue);
 
 // comienzo a procesar los threads de la cola
 void workerRun(Worker_t *workers, int workerQty);
