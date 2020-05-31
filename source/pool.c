@@ -10,15 +10,16 @@ Pool_t * poolInit()
     poolReloadBlock(pool);
 
     pool -> miners = 0;
-    pool -> minerDifficulty = 5;
-    pool -> poolDifficulty = 5;
-    pool -> section = 1000;
+    pool -> minerDifficulty = 2;
+    pool -> poolDifficulty = 2;
+    pool -> section = 10000;
 
     // valores para repartición
     pool -> blockValue = 12.5;
     pool -> gainPool = 5;
     // arranco con cero pesitos
     pool -> poolWallet = 0;
+    pool -> active = true;
 
     return pool;
 }
@@ -42,8 +43,6 @@ void poolListen(Pool_t * pool)
     pool -> mcast_addr.sin_addr.s_addr = inet_addr(MCAST_GROUP);
     pool -> mcast_addr.sin_port = htons(MCAST_PORT);    
 
-    printf("Escuchando desde el pool por nuevo minero\n");
-
 }
 
 void poolDestroy(Pool_t * pool)
@@ -65,7 +64,7 @@ void poolSendPacket(Pool_t *pool, PacketType_t pType)
     // checkeo que corresponda a mensaje p2m
     CHECK(pType & entityMask);
 
-    //  empaqueto mi info
+    //  Chequeo el tipo de paquete
     switch (pType)
     {
         case welcomeMiner:
@@ -73,12 +72,11 @@ void poolSendPacket(Pool_t *pool, PacketType_t pType)
             packet.sz8 += sizeof(packet.args.args_welcomeMiner);
             
             strcpy(packet.args.args_welcomeMiner.mensaje, "¡Bienvenido a Bandis!\n");
-            printf("Enviando saludo...\n");
 
             break;
 
         case farewellMiner:
-        
+
             packet.sz8 += sizeof(packet.args.args_farewellMiner);
             strcpy(packet.args.args_farewellMiner.mensaje, "Te saludamos desde Bandis\n");
 
@@ -127,12 +125,22 @@ void poolSendPacket(Pool_t *pool, PacketType_t pType)
 
         // multicast acá
 
-        case floodStop : 
+        case floodStop: 
             
             packet.sz8 += sizeof(packet.args.args_floodStop);
             
             //función get nonce
             strcpy(packet.args.args_floodStop.mensaje, "Basta de laburar\n");
+        
+            break;
+        
+        case shutdownPool: 
+            
+            packet.sz8 += sizeof(packet.args.args_shutdownPool);
+            // esta orden va a cerrar el main pool
+            pool->active = false;
+            //función get nonce
+            strcpy(packet.args.args_shutdownPool.mensaje, "Se cerró el server, adios!\n");
         
             break;
 
@@ -159,33 +167,36 @@ void poolSendPacket(Pool_t *pool, PacketType_t pType)
     switch (pType & multicastMask){
 
         case 0x0: // unicast
-            
+
             CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> miner_addr, (socklen_t)sizeof(pool -> miner_addr))!=-1);
             break;
 
-        default: // multcast
-            
-            CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> mcast_addr, (socklen_t)sizeof(pool -> mcast_addr))!=-1);
+        default: // multicast
 
+            CHECK(sendto(pool -> poolsock, &packet, packet.sz8, 0, (struct sockaddr *)&pool -> mcast_addr, (socklen_t)sizeof(pool -> mcast_addr))!=-1);
     }
 }
 
 void poolProcessPacket(Pool_t *pool)
 {
-
-    Packet_t  packet;
-    socklen_t slen = sizeof(pool -> miner_addr);
-
-    CHECK(recvfrom(pool -> poolsock, &packet, sizeof(Packet_t), 0, (struct sockaddr *)&pool -> miner_addr, &slen) != -1);
+    Packet_t  *packet = packetRetrieval(pool);
     
-    // checkeo que corresponda a mensaje m2p
-    CHECK(!(packet.type & entityMask));
+    if (packet -> type == stdInput)
+    {   
 
-    switch (packet.type)
+        poolExecute(pool, packet->args.args_stdIn.opt);
+
+        free(packet);
+        return;
+    }
+    // checkeo que corresponda a mensaje m2p
+    CHECK(!(packet->type & entityMask));
+
+    switch (packet->type)
     {
         case connectPool:
             
-            printf("%s", packet.args.args_welcomeMiner.mensaje);
+            printf("%s\n", packet->args.args_welcomeMiner.mensaje);
             
             // cargar a la lista de mineross, por ahora solo sumo una
             pool -> miners += 1;
@@ -198,7 +209,7 @@ void poolProcessPacket(Pool_t *pool)
             // getear de la lista de mineros, por ahora solo resto uno
             pool -> miners -= 1;
             
-            printf("%s", packet.args.args_disconnectPool.mensaje);
+            printf("%s\n", packet->args.args_disconnectPool.mensaje);
             poolSendPacket(pool, farewellMiner);
             
             break;
@@ -217,7 +228,8 @@ void poolProcessPacket(Pool_t *pool)
         case submitNonce:
 
             //acá voy a decidir en base al bloque si es bueno o malo y le mando la confirmación, también guardo el address
-            poolVerifyBlock(pool, packet.args.args_submitNonce.goldNonce);
+            poolVerifyBlock(pool, packet->args.args_submitNonce.goldNonce);
+            // despues de esto 
             break;
 
         default:
@@ -227,10 +239,86 @@ void poolProcessPacket(Pool_t *pool)
             break;
     }
     
-    // printf("Paquete recibido desde %s:%d\n\n", 
-    // inet_ntoa(pool -> miner_addr.sin_addr), ntohs(pool -> miner_addr.sin_port));
+    free(packet);
 }
 
+// con esto obtengo los paquetes
+Packet_t * packetRetrieval(Pool_t *pool)
+{
+
+    Packet_t * packet = (Packet_t *)malloc(sizeof(Packet_t));
+    int ready, maxfdp;
+    fd_set rset;
+    socklen_t slen = sizeof(pool -> pool_addr);
+    char buffer[BUFLEN];
+
+    // si anda, timeout
+    FD_ZERO(&rset);
+
+    maxfdp = pool -> poolsock+1; 
+
+    while(1)
+    {   
+        FD_SET(pool -> poolsock, &rset); 
+        FD_SET(STDIN_FILENO, &rset);
+
+        ready = select(maxfdp, &rset, NULL, NULL, NULL); 
+        CHECK(ready >= 0);
+        
+        // leo de stdin
+
+        if (FD_ISSET(STDIN_FILENO, &rset)) 
+        { 
+            // non comprehensive sanity check acá gilardo
+            read(STDIN_FILENO, buffer, BUFLEN);
+
+            packet -> type = stdInput;
+            packet -> args.args_stdIn.opt = atoi(buffer);            
+
+            break;
+        } 
+
+        //unicast
+
+        if (FD_ISSET(pool -> poolsock, &rset)) 
+        { 
+            // non comprehensive sanity check acá gilardo
+            CHECK(recvfrom(pool -> poolsock, packet, sizeof(Packet_t), 0, (struct sockaddr *)&pool -> miner_addr, &slen) != -1);
+            // proceso el paquete
+            break;
+        } 
+    }
+
+    return packet;
+}
+
+void poolExecute(Pool_t * pool, PoolInputType_t inType){
+    
+    switch (inType)
+    {   
+        case closePool:
+
+            printf("Flooding stop\n");
+            poolSendPacket(pool, shutdownPool);
+            break;
+            
+        case platucha:
+
+            printf("Platita actual : %f Bancoins\n", pool->poolWallet);
+            break;
+        
+        case currMiners:
+
+            printf("Cantidad de mineros en el pool : %d \n", pool->miners);
+            break;
+        
+        default:
+            printf("Error de input, vuelva a intentar\n");
+            break;
+    }
+    
+}
+// funciones del pool
 void poolVerifyBlock(Pool_t * pool, int32_t goldNonce)
 {   
     BlockDiffType_t diffType;
@@ -257,11 +345,7 @@ void poolVerifyBlock(Pool_t * pool, int32_t goldNonce)
             poolSendPacket(pool, floodStop);
             poolSendPacket(pool, sendReward);
 
-            printf("Plata actual : %f\n", pool->poolWallet);
-            // // aquí deberia comenzar todo de vuelta
-            // poolReloadBlock(pool);
-
-            // loggear el bloque, floodear el pool y felicitar con recompensas a todes
+            poolReloadBlock(pool);
             break;
     }
 }
@@ -313,7 +397,7 @@ BlockDiffType_t hashCheckBlock(Pool_t *pool, int32_t nonce)
 // hago función basicona que le reparta a todos por igual y me pague el resto en mi billetera
 float poolCalculateReward(Pool_t *pool)
 {
-    float rewardMiner = (float)((pool->blockValue - pool->gainPool)/pool -> miners);
+    float rewardMiner = (pool->blockValue - pool->gainPool)/(float)pool -> miners;
     
     pool -> poolWallet += pool->gainPool;
     

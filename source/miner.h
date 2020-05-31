@@ -25,8 +25,9 @@
 #define HASH_INPUT 20
 #define HASH_OUTPUT 20
 #define BLOCKSIZE 15
-#define MAX_ITER 4
+#define MAX_ITER 1
 #define MAX_NAME_MINER 20
+#define ROBO_BLOQUE 12.5
 
 typedef struct Miner
 {
@@ -45,6 +46,9 @@ typedef struct Miner
     bool active;
     char minerId[MAX_NAME_MINER];
 
+    // Para reconexión
+    PacketType_t state;
+    
     int32_t nonce;
     int32_t section;
     int32_t curDifficulty;
@@ -77,7 +81,9 @@ Packet_t * packetRetrieval(Miner_t *miner);
 // Funcionamiento : Inicio y finalización de busqueda de Hash
 void minerLoadQueue(Miner_t *miner);
 void minerRun(Miner_t *miner);
+void minerDecision(Miner_t *miner);
 void minerFlush(Miner_t *miner);
+void minerExecute(Miner_t * miner, MinerInputType_t inType);
 // Funciones útiles
 int max(int x, int y);
 void hashBlock(void *ctx);

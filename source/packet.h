@@ -11,10 +11,10 @@
 typedef enum
 {   
     // casting
-    multicastMask = 0x200,
+    multicastMask = 0x2000,
 
     // entity
-    entityMask = 0x100
+    entityMask = 0x1000
 
 } MaskType_t;
 
@@ -44,10 +44,36 @@ typedef enum
     farewellMiner = 0x81| entityMask,
     // multicast
     floodStop = 0x22 | entityMask | multicastMask ,
-    sendReward = 0x42 | entityMask | multicastMask 
+    sendReward = 0x42 | entityMask | multicastMask,
+    // caso particular de farewell
+    shutdownPool = 0x81 | entityMask | multicastMask,
 
+    // uso el mismo paquete para avisar que entraron giladas por stdin
+    stdInput = 0x10000, 
+    timeoutVal = 0x20000,
+    // enviado
+    idle = 0x0
 } PacketType_t;
 
+typedef enum 
+{
+    conn = 0,
+    startMining = 1,
+    stopMining = 2,
+    disc = 3,
+    platita = 4,
+    closeMiner = 5,
+    help = 6
+
+} MinerInputType_t;
+
+typedef enum 
+{
+    platucha = 1,
+    closePool = 0,
+    currMiners = 2,
+
+} PoolInputType_t;
 
 // timestamp estaria bueno tambien
 
@@ -106,8 +132,8 @@ typedef struct __attribute__((__packed__)) Packet{
         struct  sendBlock_
         {
             char block[BLOCKSIZE];
-            int32_t difficulty;
-            
+            int  difficulty;
+
         } args_sendBlock;
 
         struct  successBlock_
@@ -130,16 +156,26 @@ typedef struct __attribute__((__packed__)) Packet{
 
         } args_floodStop;
         
+        struct  shutdownPool_
+        {
+            char mensaje[MAX_SIZE_MSG];
+
+        } args_shutdownPool;
+
         struct  farewellMiner_
         {
             char mensaje[MAX_SIZE_MSG];
 
         } args_farewellMiner;
+
+        // shared
+        struct  stdIn_
+        {
+            int opt;
+
+        } args_stdIn;
     } args;
 
 } Packet_t;
-
-
-
 
 #endif //PACKET_H_

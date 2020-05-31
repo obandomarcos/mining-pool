@@ -12,26 +12,22 @@
 #include "packet.h"
 #include "pool.h"
 
-void rutina1Pool(Pool_t *pool);
-void rutina2Pool(Pool_t *pool);
-
 int main(void)
 {
     Pool_t *pool = poolInit();
 
     poolListen(pool); 
 
-    rutina1Pool(pool);
+    printf("Bienvenido a Bandis - Pool server\n\nCommand Reference\n\n0 - Shutdown Pool\n1 - Show platucha\n2 - Check current number of miners\n");
+    
+    printf("Recibiendo conexiones\n");
+
+    while(pool->active){
+    // Recepción de paquetes
+        poolProcessPacket(pool);
+    }
 
     poolDestroy(pool);
     return 0;
 }
 
-void rutina1Pool(Pool_t *pool){
-    
-    while(1){
-    // Recepción de paquetes
-        poolProcessPacket(pool);
-    }
-    
-}

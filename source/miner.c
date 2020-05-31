@@ -49,13 +49,10 @@ void minerInit(Miner_t * miner, char * pool_name)
 
     miner -> minersock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
     CHECK(miner -> minersock);
-
     miner -> pool = gethostbyname(pool_name);
     CHECK(miner -> pool!=NULL);
-
     memset(&miner -> pool_addr, 0, sizeof(miner -> pool_addr));
     miner -> pool_addr.sin_family = AF_INET;
-
     memcpy(&miner -> pool -> h_addr, &miner -> pool_addr.sin_addr.s_addr, miner-> pool -> h_length);
     miner -> pool_addr.sin_port = htons(PORT);
 
@@ -68,6 +65,7 @@ void minerInit(Miner_t * miner, char * pool_name)
     read_timeout.tv_sec = 0;
     read_timeout.tv_usec = 10;
     
+    // estaría bueno que esto sea por otro lado -> recibir la dirección de conexión
     CHECK(setsockopt(miner -> mcastsock, SOL_SOCKET, SO_RCVTIMEO, &read_timeout, sizeof(read_timeout)) >= 0);
 
     CHECK(setsockopt(miner -> mcastsock, SOL_SOCKET, SO_REUSEADDR,&yes,sizeof(yes)) >= 0);
@@ -89,6 +87,109 @@ void minerInit(Miner_t * miner, char * pool_name)
 
 }
 
+void minerProcessPacket(Miner_t * miner)
+{
+    Packet_t *packet = packetRetrieval(miner);
+
+    // salgo si en realidad es entrada de stdin. Lo sé, es medio chancho
+    if (packet -> type == stdInput)
+    {   
+
+        minerExecute(miner, packet->args.args_stdIn.opt);
+
+        free(packet);
+        return;
+    }
+    
+    // más chancho aún
+    if (packet -> type == timeoutVal)
+    {   
+        free(packet);
+        return;
+    }
+
+    // checkeo que corresponda a mensaje p2m
+    CHECK((packet->type & entityMask));
+
+    // proceso intercambio de paquetes
+    switch (packet->type)
+    {   
+
+        case welcomeMiner:
+
+            printf("%s\n", packet->args.args_welcomeMiner.mensaje);
+
+            break;
+
+        case sendBlock:
+
+            // me cargo el bloque y la dificultad
+            strcpy(miner -> block, packet->args.args_sendBlock.block);
+            miner -> curDifficulty = packet->args.args_sendBlock.difficulty;
+
+            minerSendPacket(miner, reqNonce);
+
+            break;
+
+        case sendNonce:
+
+            // me cargo un nuevo nonce para hashear
+            miner -> nonce = packet->args.args_sendNonce.nonce;
+            miner -> section = packet->args.args_sendNonce.section;
+            
+            printf("Laburando\n");
+            minerLoadQueue(miner);
+            minerRun(miner); // laburo hasta encontrar resultados ó terminar la sec
+            minerDecision(miner);
+            
+            break;
+
+        case successBlock:
+
+            printf("%s\n", packet->args.args_successBlock.mensaje);
+            
+            break;
+        
+        case floodStop:
+            
+            printf("%s\n", packet->args.args_floodStop.mensaje);
+            // limpio el minero
+            minerFlush(miner);
+            
+            break;
+        
+        case sendReward:
+
+            miner->wallet += packet->args.args_sendReward.reward;
+            printf("%s\n", packet->args.args_sendReward.mensaje);
+            
+            printf("Para requerir un nuevo bloque, ingrese 1:\n");
+
+            break;
+            
+        case farewellMiner:
+            
+            printf("%s\n", packet->args.args_farewellMiner.mensaje);
+            break;
+            
+        case shutdownPool:
+            
+            printf("%s\n", packet->args.args_shutdownPool.mensaje);
+            miner->active = false;
+
+            break;
+
+        default:
+
+            perror("Tipo de paquete no manipulable\n");
+            exit(1);
+            
+            break;
+    }
+
+    free(packet);
+}
+
 void minerSendPacket(Miner_t * miner, PacketType_t pType)
 {
 
@@ -101,10 +202,11 @@ void minerSendPacket(Miner_t * miner, PacketType_t pType)
     // checkeo que el tipo de entidades sea miner2pool
     CHECK(!(pType & entityMask));
 
+    miner -> state = pType;
+
     switch (pType)
     {
         case connectPool:
-        
             packet.sz8 += sizeof(packet.args.args_connectPool);
             strcpy(packet.args.args_connectPool.mensaje, "Buen día, quiero conectarme al pool\n");
             
@@ -140,6 +242,10 @@ void minerSendPacket(Miner_t * miner, PacketType_t pType)
             
             break;
         
+        case idle: 
+            
+            return;
+        
         default:
             perror("Tipo de paquete no manipulable\n");
             exit(1);
@@ -148,109 +254,6 @@ void minerSendPacket(Miner_t * miner, PacketType_t pType)
 
     // envío al pool
     CHECK(sendto(miner -> minersock, &packet, packet.sz8, 0, (struct sockaddr *)&miner -> pool_addr, slen)!=-1);
-}
-
-void minerProcessPacket(Miner_t * miner)
-{
-    Packet_t *packet = packetRetrieval(miner);
-
-    printf("Paquete recibido\n");
-
-    // checkeo que corresponda a mensaje p2m
-    CHECK((packet->type & entityMask));
-
-    switch (packet->type)
-    {
-        case welcomeMiner:
-
-            printf("%s\n", packet->args.args_welcomeMiner.mensaje);
-            
-            minerSendPacket(miner, reqBlock);
-
-            break;
-
-        case sendBlock:
-
-            // me cargo el bloque y la dificultad
-            strcpy(miner -> block, packet->args.args_sendBlock.block);
-            miner -> curDifficulty = packet->args.args_sendBlock.difficulty;
-
-            minerSendPacket(miner, reqNonce);
-
-            break;
-
-        case sendNonce:
-
-            // me cargo un nuevo nonce para hashear
-            miner -> nonce = packet->args.args_sendNonce.nonce;
-            miner -> section = packet->args.args_sendNonce.section;
-            
-            printf("Laburando \n");
-
-            minerLoadQueue(miner);
-            minerRun(miner); // laburo hasta encontrar resultados ó terminar la sec
-            
-            // decido si envio el goldnonce o vuelvo a pedir más
-            if (miner -> goldNonce != -1)
-            {
-                printf("Lo encontramos\n");
-                minerSendPacket(miner, submitNonce);
-            }
-            else 
-            {
-                miner->count++;
-                if (miner->count != MAX_ITER)
-                {
-                    minerSendPacket(miner, reqNonce);
-                }
-
-                else
-                {
-                    minerSendPacket(miner, disconnectPool);
-                }
-            }   
-            
-            break;
-
-        case successBlock:
-
-            printf("%s\n", packet->args.args_successBlock.mensaje);
-            
-            break;
-        
-        case floodStop:
-            
-            printf("%s\n", packet->args.args_floodStop.mensaje);
-            // limpio el minero
-            minerFlush(miner);
-            printf("platita actual : %f\n", miner->wallet);
-            break;
-        
-        case sendReward:
-
-            miner->wallet += packet->args.args_sendReward.reward;
-            printf("%s\n", packet->args.args_sendReward.mensaje);
-            
-            
-            minerSendPacket(miner, reqBlock);
-
-            break;
-            
-        case farewellMiner:
-            
-            printf("%s\n", packet->args.args_farewellMiner.mensaje);
-            miner->active = false;
-            break;
-        
-        default:
-
-            perror("Tipo de paquete no manipulable\n");
-            exit(1);
-            
-            break;
-    }
-
-    free(packet);
 }
 
 // con esto obtengo los paquetes
@@ -262,7 +265,9 @@ Packet_t * packetRetrieval(Miner_t *miner)
     fd_set rset;
     socklen_t slenPool = sizeof(miner -> pool_addr);
     socklen_t slenMcast = sizeof(miner -> mcast_addr);
-    // si anda, timeout
+    char buffer[BUFLEN];
+    struct timeval timeout;
+
     FD_ZERO(&rset);
 
     maxfdp = max(miner -> minersock, miner -> mcastsock) + 1; 
@@ -271,33 +276,170 @@ Packet_t * packetRetrieval(Miner_t *miner)
     {   
         FD_SET(miner -> minersock, &rset); 
         FD_SET(miner -> mcastsock, &rset);
+        FD_SET(STDIN_FILENO, &rset);
+        
+        // si no recibo nada, timeout
+        timeout.tv_sec = 4;
+        timeout.tv_usec = 0;
+        ready = select(maxfdp, &rset, NULL, NULL, &timeout); 
 
-        ready = select(maxfdp, &rset, NULL, NULL, NULL); 
-        CHECK(ready >= 0);
-        //unicast
-        if (FD_ISSET(miner -> minersock, &rset)) 
-        { 
-            // non comprehensive sanity check acá gilardo
-            CHECK(recvfrom(miner -> minersock, packet, sizeof(Packet_t), 0, (struct sockaddr*)&miner -> pool_addr , &slenPool) !=  -1); 
+        CHECK(ready != -1);
 
-            // proceso el paquete
-            break;
-        } 
+        // si no esta listo con algo, reenvio el requerimiento
+        if (ready == 0){
 
-        if (FD_ISSET(miner -> mcastsock, &rset)) 
-        { 
-            // non comprehensive sanity check acá gilardo
-            CHECK(recvfrom(miner -> mcastsock, packet, sizeof(Packet_t), 0, (struct sockaddr*)&miner -> mcast_addr , &slenMcast) !=  -1); 
+            printf("Timeout de recepción\n");
+            // VER EL PAQUETE QUE DEVUELVO?!!!!!
+            packet->type = timeoutVal;
+
+            // si no recibo respuesta, lo reenvío con el estado guardado
+            minerSendPacket(miner, miner->state);
+            continue;
+        }
+        else 
+        {   
+            miner -> state = idle;
             
-            break;      
+            // leo de stdin
+
+            if (FD_ISSET(STDIN_FILENO, &rset)) 
+            { 
+                // non comprehensive sanity check acá gilardo
+                read(STDIN_FILENO, buffer, BUFLEN);
+
+                packet -> type = stdInput;
+                packet -> args.args_stdIn.opt = atoi(buffer);            
+
+                break;
+            } 
+            //unicast
+
+            if (FD_ISSET(miner -> minersock, &rset)) 
+            { 
+                // non comprehensive sanity check acá gilardo
+                CHECK(recvfrom(miner -> minersock, packet, sizeof(Packet_t), 0, (struct sockaddr*)&miner -> pool_addr , &slenPool) !=  -1); 
+
+                // proceso el paquete
+                break;
+            } 
+
+            if (FD_ISSET(miner -> mcastsock, &rset)) 
+            { 
+                // non comprehensive sanity check acá gilardo
+                CHECK(recvfrom(miner -> mcastsock, packet, sizeof(Packet_t), 0, (struct sockaddr*)&miner -> mcast_addr , &slenMcast) !=  -1); 
+                
+                break;      
+            }
         } 
     }
 
     return packet;
 }
 
+void minerExecute(Miner_t * miner, MinerInputType_t inType)
+{
+    
+    switch (inType)
+    {
+        case conn:
+
+            printf("Conexión en progreso\n");
+            minerSendPacket(miner, connectPool);
+            break;
+
+        case startMining:
+
+            minerSendPacket(miner, reqBlock);
+            break;
+
+        case platita:
+        
+            printf("Platita actual : %f Bancoins\n", miner->wallet);
+            break;
+
+        case stopMining:
+
+            printf("Limpiando el minero\n");
+            minerFlush(miner);
+            break;
+
+        case disc:
+
+            printf("Desconexión en progreso\n");
+            minerSendPacket(miner, disconnectPool);
+            break;
+        
+        case closeMiner:
+
+            minerSendPacket(miner, disconnectPool);
+            printf("Anda pillo\n\n");
+            minerExecute(miner, platita);
+            miner -> active = false;
+            break;
+
+        case help :
+
+            printf("Command Reference\n\n1 - Continue Mining\n2 - Stop Mining\n3 - Disconnect from Pool\n4 - Show platita\n5 - Close miner\n6 - Help\n");
+            break;
+        
+        default:
+            perror("Error de input\n");
+            exit(1);
+            break;
+    }
+
+}
+
 // Funcionamiento : Inicio y finalización de busqueda de Hash
 
+// decido en el momento en que estoy con el bloque en la mano
+void minerDecision(Miner_t *miner)
+{
+    Packet_t *packet;
+
+    // decido si envio el goldnonce o me robo el valor del bloque
+
+    if (miner -> goldNonce != -1)
+    {
+        printf("Lo encontramos\nElegir que hacer :\n1 - Mandar al pool \n2 - Quedarmelo y cobrar la platita\n");
+        packet = packetRetrieval(miner);
+
+        //me lo robo y pido otro nonce
+        if (packet->args.args_stdIn.opt == 2)
+        {
+            miner -> wallet += ROBO_BLOQUE;
+            minerFlush(miner);
+            minerSendPacket(miner, reqNonce);
+            
+        }
+        // envio el nonce al pool
+        else 
+        {
+            minerSendPacket(miner, submitNonce);
+        }
+        
+        free(packet);
+    }
+    // si no lo encontré, sigo pidiendo
+    else 
+    {
+        miner->count++;
+
+        if (miner->count > MAX_ITER)
+        {   
+            miner->count = 0;
+            minerExecute(miner, help);
+            minerProcessPacket(miner);
+        }
+        else
+        {   
+            minerSendPacket(miner, reqNonce);
+        }
+    }   
+
+}
+
+// cargo la cola de requerimientos a los workers
 void minerLoadQueue(Miner_t *miner)
 {
 
@@ -330,6 +472,7 @@ void minerLoadQueue(Miner_t *miner)
     }
 }
 
+// comienzo proceso de corrida del miner
 void minerRun(Miner_t *miner){
 
     miner-> workers = workerInit(miner -> workerQty,  &miner->goldNonce, miner->minerId);

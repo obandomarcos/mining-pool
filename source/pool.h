@@ -11,6 +11,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <openssl/sha.h>
+#include <stdbool.h>
 
 #include "packet.h"
 #include "common.h"
@@ -35,6 +36,7 @@ typedef struct Pool
     struct sockaddr_in mcast_addr;
 
     // atributos del pool
+    bool active;
 
     int minerDifficulty;
     int poolDifficulty;
@@ -71,7 +73,9 @@ void poolSendPacket(Pool_t *pool, PacketType_t pType);
 void poolProcessPacket(Pool_t *pool);
 void poolVerifyBlock(Pool_t * pool, int32_t goldNonce);
 void poolReloadBlock(Pool_t *pool);
-
+void poolExecute(Pool_t * pool, PoolInputType_t inType);
+// como recibo paquetes o coordino con stdin
+Packet_t * packetRetrieval(Pool_t *pool);
 // funciones útiles
 BlockDiffType_t hashCheckBlock(Pool_t *pool, int32_t nonce);
 float poolCalculateReward(Pool_t *pool);
