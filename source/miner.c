@@ -361,6 +361,7 @@ void minerExecute(Miner_t * miner, MinerInputType_t inType)
 
             printf("Limpiando el minero\n");
             minerFlush(miner);
+            minerExecute(miner, help);
             break;
 
         case disc:
