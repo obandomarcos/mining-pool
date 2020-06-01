@@ -345,11 +345,13 @@ void minerExecute(Miner_t * miner, MinerInputType_t inType)
 
             printf("Conexión en progreso\n");
             minerSendPacket(miner, connectPool);
+            minerExecute(miner, helpStart);
             break;
 
         case startMining:
 
             minerSendPacket(miner, reqBlock);
+            system("clear");
             break;
 
         case platita:
@@ -383,9 +385,15 @@ void minerExecute(Miner_t * miner, MinerInputType_t inType)
             printf("Command Reference\n\n1 - Continue Mining\n2 - Stop Mining\n3 - Disconnect from Pool\n4 - Show platita\n5 - Close miner\n6 - Help\n");
             break;
         
+        case helpStart:
+
+            printf("Command Reference\n\n1 - Start Mining\n2 - Stop Mining\n3 - Disconnect from Pool\n4 - Show platita\n5 - Close miner\n6 - Help\n");
+            break;
+        
         default:
             perror("Error de input\n");
-            exit(1);
+            minerExecute(miner, help);
+
             break;
     }
 

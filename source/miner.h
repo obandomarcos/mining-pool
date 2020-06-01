@@ -67,6 +67,18 @@ typedef struct Miner
     float wallet;
 } Miner_t;
 
+typedef enum 
+{
+    conn = 0,
+    startMining = 1,
+    stopMining = 2,
+    disc = 3,
+    platita = 4,
+    closeMiner = 5,
+    help = 6,
+    helpStart = 7
+
+} MinerInputType_t;
 
 // Creación y destrucción
 Miner_t * minerCreate(char * minerId);

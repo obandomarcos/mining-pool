@@ -55,26 +55,6 @@ typedef enum
     idle = 0x0
 } PacketType_t;
 
-typedef enum 
-{
-    conn = 0,
-    startMining = 1,
-    stopMining = 2,
-    disc = 3,
-    platita = 4,
-    closeMiner = 5,
-    help = 6
-
-} MinerInputType_t;
-
-typedef enum 
-{
-    platucha = 1,
-    closePool = 0,
-    currMiners = 2,
-
-} PoolInputType_t;
-
 // timestamp estaria bueno tambien
 
 typedef struct __attribute__((__packed__)) Packet{

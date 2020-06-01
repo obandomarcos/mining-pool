@@ -66,6 +66,14 @@ typedef enum
 
 } BlockDiffType_t;
 
+typedef enum 
+{
+    platucha = 1,
+    closePool = 0,
+    currMiners = 2,
+
+} PoolInputType_t;
+
 Pool_t * poolInit();
 void poolListen(Pool_t *pool);
 void poolDestroy(Pool_t * pool);
